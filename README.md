@@ -2,6 +2,12 @@
 
 Üniversite bölümleri için sınav takvimi oluşturma ve otomatik oturma planı (yerleşim düzeni) hazırlama amaçlı masaüstü uygulaması.
 
+![Giriş ekranı](giris-ekrani.png)
+
+Admin girişi sonrası ana panel — bölüm, derslik, ders, öğrenci, öğretim görevlisi ve sınav programı işlemleri üst menüden yönetilir:
+
+![Ana panel](ana-panel.png)
+
 ## Özellikler
 
 - Rol tabanlı giriş (Admin / Bölüm Koordinatörü)
