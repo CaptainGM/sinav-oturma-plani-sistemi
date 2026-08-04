@@ -8,6 +8,16 @@ Admin girişi sonrası ana panel — bölüm, derslik, ders, öğrenci, öğreti
 
 ![Ana panel](ana-panel.png)
 
+## Mimari
+
+```mermaid
+flowchart LR
+    U[Kullanıcı] --> UI[Tkinter Arayüzü]
+    UI --> DB[(MySQL)]
+    UI --> PDF[ReportLab ile PDF]
+    UI --> XLS[Excel - pandas]
+```
+
 ## Özellikler
 
 - Rol tabanlı giriş (Admin / Bölüm Koordinatörü)
