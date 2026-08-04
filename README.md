@@ -35,6 +35,8 @@ flowchart LR
 
 ## Kurulum
 
+> Bu bir Tkinter masaüstü uygulamasıdır; grafik arayüzü nedeniyle Docker ile çalıştırmak pratik değildir, aşağıdaki adımlarla doğrudan çalıştırın.
+
 ```bash
 pip install -r requirements.txt
 ```
