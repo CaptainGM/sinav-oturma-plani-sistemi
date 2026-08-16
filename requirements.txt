@@ -1,4 +1,6 @@
-mysql-connector-python
+pymongo
 pandas
+openpyxl
 Pillow
 reportlab
+bcrypt
