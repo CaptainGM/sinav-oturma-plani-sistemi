@@ -6,6 +6,9 @@ from tkinter import ttk
 from ..styles import COLORS
 from .background import ResponsiveBackground
 
+# Özet kartlarının üst şeridinde sırayla kullanılan vurgu renkleri.
+CARD_ACCENTS = ('#3884f6', '#8b5cf6', '#27ae60', '#f39c12', '#2980b9', '#ec4899')
+
 
 class DashboardMixin:
     def show_main_menu(self):
@@ -237,15 +240,21 @@ class DashboardMixin:
         cards_frame.pack(fill=tk.X, padx=32, pady=(12, 0))
 
         for i, (title, value) in enumerate(stats):
+            accent = CARD_ACCENTS[i % len(CARD_ACCENTS)]
+
             card = tk.Frame(cards_frame, bg=COLORS['bg_card'],
-                             highlightbackground=COLORS['border'], highlightthickness=1,
-                             padx=18, pady=16)
+                             highlightbackground=COLORS['border'], highlightthickness=1)
             card.grid(row=0, column=i, padx=8, sticky="nsew")
             cards_frame.grid_columnconfigure(i, weight=1, uniform="card")
 
-            tk.Label(card, text=str(value), font=("Segoe UI", 26, "bold"), bg=COLORS['bg_card'],
-                     fg=COLORS['primary']).pack(anchor="w")
-            tk.Label(card, text=title, font=("Segoe UI", 9, "bold"), bg=COLORS['bg_card'],
+            tk.Frame(card, bg=accent, height=4).pack(fill=tk.X)
+
+            inner = tk.Frame(card, bg=COLORS['bg_card'], padx=18, pady=16)
+            inner.pack(fill=tk.BOTH, expand=True)
+
+            tk.Label(inner, text=str(value), font=("Segoe UI", 26, "bold"),
+                     bg=COLORS['bg_card'], fg=accent).pack(anchor="w")
+            tk.Label(inner, text=title, font=("Segoe UI", 9, "bold"), bg=COLORS['bg_card'],
                      fg=COLORS['text_muted'], wraplength=150).pack(anchor="w", pady=(4, 0))
 
     def _build_quick_actions(self, parent):

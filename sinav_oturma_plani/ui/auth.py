@@ -3,9 +3,11 @@ import re
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
+from PIL import ImageTk
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from ..styles import COLORS, hash_password, verify_password, is_bcrypt_hash
+from ..styles import (CARD_PADDING, COLORS, hash_password, hex_to_rgb, is_bcrypt_hash,
+                       rounded_card, verify_password)
 from .background import ResponsiveBackground
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -30,8 +32,12 @@ class AuthMixin:
         subtitle_item = canvas.create_text(0, 0, text=subtitle, font=("Segoe UI", 10),
                                             fill=COLORS['text_muted'], anchor="n")
 
+        # Kart görseli formdan önce oluşturuluyor ki formun altında kalsın.
+        card_item = canvas.create_image(0, 0, anchor="n")
         form_frame = tk.Frame(canvas, bg=COLORS['bg_dark'], padx=45, pady=35)
         form_item = canvas.create_window(0, 0, window=form_frame, anchor="n")
+
+        card_size = {'value': None}
 
         def layout(_event=None):
             # Ekran değişiminde canvas, gecikmeli çağrı gelmeden yok edilebilir.
@@ -46,9 +52,17 @@ class AuthMixin:
             block_height = 245 + form_frame.winfo_reqheight()
             top = max(20, (h - block_height) // 2)
 
+            form_w, form_h = form_frame.winfo_reqwidth(), form_frame.winfo_reqheight()
+            if card_size['value'] != (form_w, form_h):
+                card_size['value'] = (form_w, form_h)
+                self._auth_card_img = ImageTk.PhotoImage(
+                    rounded_card(form_w, form_h, hex_to_rgb(COLORS['bg_dark']) + (255,)))
+                canvas.itemconfig(card_item, image=self._auth_card_img)
+
             canvas.coords(icon_item, cx, top)
             canvas.coords(title_item, cx, top + 165)
             canvas.coords(subtitle_item, cx, top + 200)
+            canvas.coords(card_item, cx, top + 235 - CARD_PADDING)
             canvas.coords(form_item, cx, top + 235)
 
         canvas.bind("<Configure>", layout, add="+")

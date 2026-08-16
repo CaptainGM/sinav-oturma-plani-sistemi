@@ -46,6 +46,8 @@ COLORS = {
     'text_dark': '#2c3e50',
     'text_muted': '#7f8c8d',
     'border': '#d0d7de',
+    'accent': '#3884f6',
+    'accent_dark': '#2f6fd0',
 }
 
 
@@ -72,9 +74,9 @@ def configure_styles(style):
                      font=('Segoe UI', 24, 'bold'))
 
     style.configure('TButton', font=('Segoe UI', 10), padding=6)
-    style.configure('Accent.TButton', background=COLORS['success'], foreground=COLORS['text_light'],
+    style.configure('Accent.TButton', background=COLORS['accent'], foreground=COLORS['text_light'],
                      font=('Segoe UI', 11, 'bold'), padding=8)
-    style.map('Accent.TButton', background=[('active', COLORS['success_dark'])])
+    style.map('Accent.TButton', background=[('active', COLORS['accent_dark'])])
     style.configure('Primary.TButton', background=COLORS['primary'], foreground=COLORS['text_light'],
                      font=('Segoe UI', 10, 'bold'), padding=8)
     style.map('Primary.TButton', background=[('active', COLORS['primary_dark'])])
@@ -141,33 +143,87 @@ class _HoverButton(tk.Button):
 tk.Button = _HoverButton
 
 
+GRADIENT_START = (56, 132, 246)
+GRADIENT_END = (139, 92, 246)
+
+CARD_PADDING = 22
+
+
+def hex_to_rgb(value):
+    return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def rounded_card(width, height, fill, glow=GRADIENT_START, radius=20):
+    """Yuvarlak köşeli, ince çerçeveli ve dışa doğru parlayan kart görseli.
+
+    Tkinter çerçeveleri köşe yarıçapını desteklemediği için kart bir görsel
+    olarak çizilir; aynı rengi kullanan form çerçevesi üstüne oturunca tek
+    parça yuvarlak bir kart gibi görünür. Görsel her yönde CARD_PADDING kadar
+    formdan büyüktür."""
+    pad = CARD_PADDING
+    canvas_size = (width + pad * 2, height + pad * 2)
+
+    glow_layer = Image.new('RGBA', canvas_size, (0, 0, 0, 0))
+    ImageDraw.Draw(glow_layer).rounded_rectangle(
+        [pad - 4, pad - 4, pad + width + 4, pad + height + 4],
+        radius=radius + 4, fill=glow + (70,))
+    img = glow_layer.filter(ImageFilter.GaussianBlur(pad * 0.55))
+
+    ImageDraw.Draw(img).rounded_rectangle(
+        [pad, pad, pad + width, pad + height], radius=radius,
+        fill=fill, outline=(255, 255, 255, 42), width=2)
+    return img
+
+
 def generate_app_icon(size=512):
-    """Oturma planını çağrıştıran kare koltuk ızgarasından oluşan rozet ikonu."""
+    """Mavi-mor gradyanlı squircle üzerine koltuk ızgarası.
+
+    Anti-kopya düzenindeki gibi bir sıra dolu bir sıra boş; dolu koltuklar
+    parlak, boş koltuklar saydam bırakılır."""
     scale = 4
     s = size * scale
-    img = Image.new('RGBA', (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    radius = int(s * 0.235)
 
-    pad = int(s * 0.04)
-    primary = tuple(int(COLORS['primary'][i:i + 2], 16) for i in (1, 3, 5)) + (255,)
-    success = tuple(int(COLORS['success'][i:i + 2], 16) for i in (1, 3, 5)) + (255,)
-    draw.rounded_rectangle([pad, pad, s - pad, s - pad], radius=int(s * 0.22), fill=primary)
+    canvas = _diagonal_gradient(s, s, GRADIENT_START, GRADIENT_END, angle_deg=115).convert('RGBA')
 
-    cols, rows = 3, 3
-    grid_pad = int(s * 0.17)
-    gap = int(s * 0.05)
+    # Üstten gelen cam parlaklığı, ikona derinlik veriyor.
+    highlight = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    ImageDraw.Draw(highlight).ellipse(
+        [-s * 0.35, -s * 0.80, s * 1.35, s * 0.44], fill=(255, 255, 255, 54))
+    canvas = Image.alpha_composite(canvas, highlight.filter(ImageFilter.GaussianBlur(s * 0.05)))
+
+    cols = rows = 3
+    grid_pad = int(s * 0.185)
+    gap = int(s * 0.055)
     cell = (s - 2 * grid_pad - (cols - 1) * gap) / cols
-    seat_radius = cell * 0.22
-    highlighted = {(0, 1), (1, 0), (1, 2), (2, 1)}
+    seat_radius = cell * 0.30
+    dolu = {(0, 0), (0, 2), (1, 1), (2, 0), (2, 2)}
+
+    glow = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow)
+    seats = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    seat_draw = ImageDraw.Draw(seats)
 
     for r in range(rows):
         for c in range(cols):
             x0 = grid_pad + c * (cell + gap)
             y0 = grid_pad + r * (cell + gap)
-            color = success if (r, c) in highlighted else (255, 255, 255, 235)
-            draw.rounded_rectangle([x0, y0, x0 + cell, y0 + cell], radius=seat_radius, fill=color)
+            box = [x0, y0, x0 + cell, y0 + cell]
+            if (r, c) in dolu:
+                glow_draw.rounded_rectangle(box, radius=seat_radius, fill=(255, 255, 255, 140))
+                seat_draw.rounded_rectangle(box, radius=seat_radius, fill=(255, 255, 255, 250))
+            else:
+                seat_draw.rounded_rectangle(box, radius=seat_radius,
+                                             outline=(255, 255, 255, 120), width=int(s * 0.012))
 
-    return img.resize((size, size), Image.LANCZOS)
+    canvas = Image.alpha_composite(canvas, glow.filter(ImageFilter.GaussianBlur(s * 0.03)))
+    canvas = Image.alpha_composite(canvas, seats)
+
+    mask = Image.new('L', (s, s), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, s - 1, s - 1], radius=radius, fill=255)
+    canvas.putalpha(mask)
+
+    return canvas.resize((size, size), Image.LANCZOS)
 
 
 def _diagonal_gradient(w, h, c1, c2, angle_deg=120):
