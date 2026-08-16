@@ -31,10 +31,16 @@ class ResponsiveBackground:
 
     def _draw(self, width, height):
         self._job = None
+        # Ekran değişimlerinde canvas, gecikmeli çizim tetiklenmeden yok edilebilir.
+        if not self.canvas.winfo_exists():
+            return
         self._photo = ImageTk.PhotoImage(self._render(width, height))
         self.canvas.itemconfig(self.item, image=self._photo)
 
     def _on_configure(self, _event=None):
+        if not self.canvas.winfo_exists():
+            return
+
         width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
         if width < 2 or height < 2 or self._size == (width, height):
             return

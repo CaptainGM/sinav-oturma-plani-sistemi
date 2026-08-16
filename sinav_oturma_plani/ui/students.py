@@ -529,7 +529,10 @@ class StudentMixin:
         search_entry = tk.Entry(left_frame, font=("Arial", 10), width=20)
         search_entry.pack(pady=5)
 
-        student_listbox = tk.Listbox(left_frame, font=("Arial", 10), height=15)
+        # exportselection=False olmadan, aynı penceredeki iki liste kutusundan
+        # birini seçmek diğerinin seçimini temizler (Tk'nin PRIMARY seçim sahipliği).
+        student_listbox = tk.Listbox(left_frame, font=("Arial", 10), height=15,
+                                      exportselection=False)
         student_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
 
         student_dict = {}
@@ -561,7 +564,7 @@ class StudentMixin:
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         course_listbox = tk.Listbox(right_frame, font=("Arial", 10), height=15,
-                                    selectmode=tk.MULTIPLE)
+                                    selectmode=tk.MULTIPLE, exportselection=False)
         course_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
 
         course_dict = {}

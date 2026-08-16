@@ -1,7 +1,7 @@
 """Giriş, kayıt ve bölüm seçimi ekranları."""
 import re
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
@@ -34,6 +34,10 @@ class AuthMixin:
         form_item = canvas.create_window(0, 0, window=form_frame, anchor="n")
 
         def layout(_event=None):
+            # Ekran değişiminde canvas, gecikmeli çağrı gelmeden yok edilebilir.
+            if not canvas.winfo_exists():
+                return
+
             w, h = canvas.winfo_width(), canvas.winfo_height()
             if w < 2 or h < 2:
                 return
@@ -48,6 +52,9 @@ class AuthMixin:
             canvas.coords(form_item, cx, top + 235)
 
         canvas.bind("<Configure>", layout, add="+")
+        # Form alanları bu fonksiyon döndükten sonra ekleniyor; yüksekliği
+        # kesinleştiğinde yeniden ortalayabilmek için formu da dinliyoruz.
+        form_frame.bind("<Configure>", layout, add="+")
         self.root.after(0, layout)
         return form_frame
 
@@ -143,13 +150,38 @@ class AuthMixin:
         password2_entry.grid(row=5, column=0, pady=(0, 12))
 
         self._form_label(form, "Bölüm", 6)
+        bolum_row = tk.Frame(form, bg=COLORS['bg_dark'])
+        bolum_row.grid(row=7, column=0, pady=(0, 10), sticky="w")
+
         bolumler = [b['bolum_adi'] for b in self.db.bolumler.find().sort('bolum_adi', 1)]
         bolum_var = tk.StringVar(value=bolumler[0] if bolumler else "")
-        ttk.Combobox(form, textvariable=bolum_var, values=bolumler,
-                     state="readonly", width=26).grid(row=7, column=0, pady=(0, 10))
+        bolum_combo = ttk.Combobox(bolum_row, textvariable=bolum_var, values=bolumler,
+                                    state="readonly", width=22)
+        bolum_combo.pack(side=tk.LEFT)
 
-        tk.Label(form, text="Yeni hesaplar 'Bölüm Koordinatörü' olarak açılır.\n"
-                            "Admin yetkisini yalnızca bir yönetici verebilir.",
+        def add_bolum():
+            ad = simpledialog.askstring("Bölüm Ekle", "Yeni bölüm adı:", parent=self.root)
+            if not ad or not ad.strip():
+                return
+            ad = ad.strip()
+            try:
+                self.db.bolumler.insert_one({'bolum_adi': ad})
+            except DuplicateKeyError:
+                pass
+            except PyMongoError as e:
+                messagebox.showerror("Hata", f"Bölüm eklenemedi: {e}")
+                return
+            bolum_combo['values'] = [b['bolum_adi'] for b in
+                                      self.db.bolumler.find().sort('bolum_adi', 1)]
+            bolum_var.set(ad)
+
+        tk.Button(bolum_row, text="+", font=("Segoe UI", 11, "bold"), width=3, relief="flat",
+                  bd=0, bg=COLORS['primary'], fg="white", activebackground=COLORS['primary'],
+                  activeforeground="white", cursor="hand2",
+                  command=add_bolum).pack(side=tk.LEFT, padx=(6, 0))
+
+        tk.Label(form, text="Listede bölümünüz yoksa + ile ekleyebilirsiniz.\n"
+                            "Yeni hesaplar 'Bölüm Koordinatörü' olarak açılır.",
                  font=("Segoe UI", 8), bg=COLORS['bg_dark'], fg=COLORS['text_muted'],
                  justify=tk.LEFT).grid(row=8, column=0, sticky="w")
 
@@ -172,7 +204,7 @@ class AuthMixin:
                 messagebox.showerror("Hata", "Şifreler eşleşmiyor!")
                 return
             if not bolum:
-                messagebox.showerror("Hata", "Önce bir bölüm oluşturulmalı, yöneticinizle görüşün!")
+                messagebox.showerror("Hata", "Bir bölüm seçin veya + ile yeni bir tane ekleyin!")
                 return
 
             try:

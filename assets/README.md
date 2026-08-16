@@ -1,8 +1,19 @@
-# Görsel Değiştirme
+# Görseller
 
-Bu klasöre aşağıdaki dosyalardan birini/ikisini koyarsanız, uygulama kod
-değişikliği gerektirmeden otomatik olarak bunları kullanır. Dosya yoksa
-programatik üretilen varsayılan görsel kullanılır.
+## Pakete dahil olanlar
+
+| Dosya | Kaynak |
+|-------|--------|
+| `login_background.jpg` | [Unsplash](https://unsplash.com/photos/empty-lecture-hall-with-rows-of-seats-I8PUo5Xk8DU) — boş amfi. Uygulamanın paletine göre koyulaştırılıp renklendirildi. |
+| `panel_background.jpg` | [Unsplash](https://unsplash.com/photos/students-attentively-taking-notes-in-a-lecture-hall-NKr9f2t8Lgk) — derste not alan öğrenciler. Panelde içeriğin altında kalması için açıklaştırıldı. |
+
+Her iki görsel de [Unsplash Lisansı](https://unsplash.com/license) ile
+dağıtılıyor: ticari kullanım dahil ücretsiz, atıf zorunlu değil.
+
+## Kendi görselinizi koymak
+
+Aşağıdaki dosyalardan birini bu klasöre koyarsanız, uygulama kod değişikliği
+gerektirmeden onu kullanır. Dosya yoksa programatik üretilen desen devreye girer.
 
 | Dosya adı                | Boyut (önerilen) | Açıklama |
 |--------------------------|-------------------|----------|

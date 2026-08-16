@@ -13,8 +13,7 @@ class DashboardMixin:
         self._build_menubar()
         self._build_header()
 
-        body = tk.Frame(self.root, bg=COLORS['bg_light'])
-        body.pack(fill=tk.BOTH, expand=True)
+        body, refresh_layout = self._build_scrollable_body()
 
         if self.current_role == "Admin" and not self.current_bolum:
             self._build_department_prompt(body)
@@ -26,6 +25,7 @@ class DashboardMixin:
             self._build_upcoming_exams(body)
 
         self._build_decoration(body)
+        self.root.after(0, refresh_layout)
 
     def _build_menubar(self):
         menubar = tk.Menu(self.root)
@@ -83,15 +83,72 @@ class DashboardMixin:
                 sinav_menu.add_command(label="Çakışma Raporu", command=self.show_exam_conflicts)
                 sinav_menu.add_command(label="Sınav Takvimi (Genel Görünüm)", command=self.show_exam_calendar)
 
+    def _build_scrollable_body(self):
+        """Panel gövdesi. İçerik pencereye sığmadığında kaydırma çubuğu belirir;
+        sığdığında dekor katmanı kalan boşluğu doldurur.
+
+        `(icerik_cercevesi, yerlesimi_tazeleyen_fonksiyon)` döndürür."""
+        outer = tk.Frame(self.root, bg=COLORS['bg_light'])
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(outer, highlightthickness=0, bd=0, bg=COLORS['bg_light'])
+        scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        inner = tk.Frame(canvas, bg=COLORS['bg_light'])
+        inner_item = canvas.create_window(0, 0, window=inner, anchor="nw")
+
+        def refresh(_event=None):
+            if not canvas.winfo_exists():
+                return
+
+            width, height = canvas.winfo_width(), canvas.winfo_height()
+            if width < 2:
+                return
+            canvas.itemconfig(inner_item, width=width)
+
+            deco = getattr(self, '_panel_decoration', None)
+            if deco is not None and deco.winfo_exists():
+                # Dekor dışındaki içeriğin kapladığı yer kadarını çıkarıp
+                # kalan boşluğu dekora veriyoruz.
+                kullanilan = inner.winfo_reqheight() - int(deco.cget('height'))
+                deco.configure(height=max(90, height - kullanilan))
+
+            gereken = inner.winfo_reqheight()
+            if gereken > height:
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                canvas.configure(scrollregion=(0, 0, width, gereken))
+            else:
+                scrollbar.pack_forget()
+                canvas.yview_moveto(0)
+                canvas.configure(scrollregion=(0, 0, width, height))
+
+        canvas.bind("<Configure>", refresh, add="+")
+        inner.bind("<Configure>", refresh, add="+")
+
+        def on_wheel(event):
+            if inner.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(-int(event.delta / 120), "units")
+
+        # bind_all yalnızca imleç panelin üzerindeyken bağlanır; aksi halde
+        # açık olan diğer pencerelerin tekerlek olaylarını da yakalardı.
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", on_wheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+        return inner, refresh
+
     def _build_decoration(self, parent):
         """İçeriğin altında kalan boşluğu dekoratif arka planla doldurur.
 
         Ayrı bir katman olarak en sona yerleştirilir; böylece içerik ne kadar
         yer kaplarsa kaplasın dekor tam onun bittiği yerden başlar ve araya
         görünür bir sınır girmez."""
-        canvas = tk.Canvas(parent, highlightthickness=0, bd=0, bg=COLORS['bg_light'])
-        canvas.pack(fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(parent, highlightthickness=0, bd=0, bg=COLORS['bg_light'],
+                            height=90)
+        canvas.pack(fill=tk.X)
         ResponsiveBackground(canvas, self.panel_bg_source)
+        self._panel_decoration = canvas
         return canvas
 
     def _build_header(self):

@@ -85,6 +85,28 @@ def configure_styles(style):
     style.configure('Treeview.Heading', font=('Segoe UI', 10, 'bold'))
 
 
+def apply_widget_defaults(root):
+    """Klasik tk widget'ları için varsayılan renkleri ayarlar.
+
+    Windows'un varsayılan gri tonu yerine uygulamanın zemin rengi kullanılır;
+    böylece ~30 ekranın her biri tek tek elden geçirilmeden aynı görünümü alır.
+    Kendi `bg`/`fg` değerini açıkça veren widget'lar bundan etkilenmez."""
+    for widget in ('Toplevel', 'Frame', 'Label', 'Labelframe',
+                    'Checkbutton', 'Radiobutton'):
+        root.option_add(f'*{widget}.background', COLORS['bg_light'])
+
+    for widget in ('Label', 'Labelframe', 'Checkbutton', 'Radiobutton'):
+        root.option_add(f'*{widget}.foreground', COLORS['text_dark'])
+
+    for widget in ('Checkbutton', 'Radiobutton'):
+        root.option_add(f'*{widget}.activeBackground', COLORS['bg_light'])
+        root.option_add(f'*{widget}.activeForeground', COLORS['text_dark'])
+        root.option_add(f'*{widget}.selectColor', COLORS['bg_card'])
+
+    root.option_add('*Entry.background', COLORS['bg_card'])
+    root.option_add('*Listbox.background', COLORS['bg_card'])
+
+
 class _HoverButton(tk.Button):
     """Üzerine gelindiğinde arka planı açılan/koyulaşan tk.Button."""
 
@@ -241,14 +263,32 @@ def generate_panel_background(width, height):
     return Image.alpha_composite(img.convert('RGBA'), layer).convert('RGB')
 
 
+def fade_top_to_base(img, fade_ratio=0.55):
+    """Görselin üst kısmını panel zemin rengine doğru eritir.
+
+    En üst satır tam olarak zemin rengi olur; böylece görsel, üstündeki içerik
+    çerçevesinin bittiği yerde görünür bir sınır oluşturmadan başlar."""
+    base = np.array([int(COLORS['bg_light'][i:i + 2], 16) for i in (1, 3, 5)], dtype=np.float32)
+    arr = np.array(img).astype(np.float32)
+    height = arr.shape[0]
+
+    yy = np.arange(height, dtype=np.float32).reshape(-1, 1, 1)
+    t = np.clip(yy / max(height * fade_ratio, 1.0), 0.0, 1.0) ** 1.3
+    arr = base * (1 - t) + arr * t
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode='RGB')
+
+
 def get_panel_background():
-    """`assets/panel_background.png|jpg` varsa o görseli, yoksa boyuta göre
-    desen üreten fonksiyonun kendisini döndürür."""
+    """Panel arka planını `(genislik, yukseklik) -> Image` üreteci olarak döndürür.
+
+    `assets/panel_background.png|jpg` varsa o görsel kırpılıp üst kenarı zemine
+    eritilerek kullanılır; yoksa desen programatik üretilir."""
     for ext in ('png', 'jpg', 'jpeg'):
         path = os.path.join(_ASSETS_DIR, f'panel_background.{ext}')
         if os.path.isfile(path):
             try:
-                return Image.open(path).convert('RGB')
+                asset = Image.open(path).convert('RGB')
+                return lambda w, h: fade_top_to_base(cover_resize(asset, w, h))
             except Exception as e:
                 print(f"Uyarı: assets/panel_background.{ext} okunamadı: {e}")
     return generate_panel_background

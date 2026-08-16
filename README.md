@@ -2,7 +2,7 @@
 
 Üniversite bölümleri için sınav takvimi oluşturma ve otomatik oturma planı (yerleşim düzeni) hazırlama amaçlı masaüstü uygulaması.
 
-Giriş ekranı — pencereyle birlikte ölçeklenen arka plan, şifre göster/gizle ve kayıt bağlantısı:
+Giriş ekranı — pencereyle birlikte ölçeklenen amfi arka planı, şifre göster/gizle ve kayıt bağlantısı:
 
 ![Giriş ekranı](giris-ekrani.png)
 
@@ -23,6 +23,7 @@ flowchart LR
 ## Özellikler
 
 - Rol tabanlı giriş (Admin / Bölüm Koordinatörü) ve kendi kendine kayıt olma
+- Pencere boyutuna uyum sağlayan görsel arka planlar (`assets/` klasörüne dosya koyarak değiştirilebilir)
 - Ana panelde özet istatistik kartları, hızlı işlem kısayolları ve yaklaşan sınav listesi
 - Bölüm, derslik ve ders yönetimi
 - Sınav programı oluşturma (öğrenci çakışmalarını otomatik olarak önlemeye çalışan yerleştirme algoritması)
