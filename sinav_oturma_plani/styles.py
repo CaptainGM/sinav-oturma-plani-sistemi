@@ -1,4 +1,4 @@
-"""Ortak renk paleti, ttk stilleri, uygulama ikonu ve şifre hashleme yardımcıları."""
+"""Renkler, ortak görünüm ayarları, buton/pencere tasarımı ve şifre işlemleri."""
 import hashlib
 import os
 import tkinter as tk
@@ -24,7 +24,7 @@ def is_bcrypt_hash(stored_hash):
 
 
 def verify_password(password, stored_hash):
-    """bcrypt hash'lerini doğrular; eski salt'sız SHA256 hesaplarıyla da uyumludur."""
+    """Girilen şifreyi kayıtlı şifreyle karşılaştırır. Eski hesaplarla da çalışır."""
     if is_bcrypt_hash(stored_hash):
         try:
             return bcrypt.checkpw(password.encode(), stored_hash.encode())
@@ -54,8 +54,7 @@ COLORS = {
 
 
 def configure_styles(style):
-    # 'clam' kullanılıyor: Windows'un vista/winnative temaları buton ve çerçeve
-    # arka plan renklerini yok sayıyor.
+    # Windows'un kendi temaları renk ayarlarını yok sayıyor, bu yüzden 'clam'.
     style.theme_use('clam')
 
     style.configure('TFrame', background=COLORS['bg_light'])
@@ -90,11 +89,7 @@ def configure_styles(style):
 
 
 def apply_widget_defaults(root):
-    """Klasik tk widget'ları için varsayılan renkleri ayarlar.
-
-    Windows'un varsayılan gri tonu yerine uygulamanın zemin rengi kullanılır;
-    böylece ~30 ekranın her biri tek tek elden geçirilmeden aynı görünümü alır.
-    Kendi `bg`/`fg` değerini açıkça veren widget'lar bundan etkilenmez."""
+    """Bütün pencerelerin aynı zemin rengini kullanması için varsayılanları ayarlar."""
     for widget in ('Toplevel', 'Frame', 'Label', 'Labelframe',
                     'Checkbutton', 'Radiobutton'):
         root.option_add(f'*{widget}.background', COLORS['bg_light'])
@@ -112,7 +107,7 @@ def apply_widget_defaults(root):
 
 
 def _shade(rgb, amount):
-    """amount > 0 açar, < 0 koyulaştırır."""
+    """Rengi açar (amount > 0) ya da koyulaştırır (amount < 0)."""
     if amount >= 0:
         return tuple(int(c + (255 - c) * amount) for c in rgb)
     return tuple(max(0, int(c * (1 + amount))) for c in rgb)
@@ -134,16 +129,10 @@ def _pill(width, height, rgb, radius, supersample=3):
 
 
 class _RoundedButton(tk.Canvas):
-    """tk.Button yerine geçen, yuvarlak köşeli modern buton.
+    """Yuvarlak köşeli buton. tk.Button ile aynı şekilde kullanılır.
 
-    Tkinter'ın klasik butonu köşe yarıçapını ve düz tasarımı desteklemediği
-    için gövde PIL ile çizilip Canvas'a görsel olarak yerleştirilir; metin
-    Tk'nin kendi metin öğesiyle yazılır (font kalitesi bozulmasın diye).
-
-    tk.Button ile aynı şekilde kullanılabilsin diye text/command/bg/fg/font/
-    state seçeneklerini, `invoke()`, `cget()` ve `config()` çağrılarını
-    destekler. relief, bd, activebackground gibi klasik görünüm seçenekleri
-    sessizce yok sayılır."""
+    Tkinter'ın kendi butonu yuvarlak köşe desteklemediği için zemin resim
+    olarak çizilir."""
 
     RADIUS = 8
     _SWALLOWED = ('relief', 'bd', 'borderwidth', 'activebackground', 'activeforeground',
@@ -278,18 +267,13 @@ _WINDOW_BACKGROUND = None
 
 
 def set_window_background(source):
-    """Alt pencerelerin dekoratif arka planını belirler (görsel ya da üreteç)."""
+    """Alt pencerelerde kullanılacak arka planı belirler."""
     global _WINDOW_BACKGROUND
     _WINDOW_BACKGROUND = source
 
 
 class _ThemedToplevel(tk.Toplevel):
-    """Arka planı boş kalmayan Toplevel.
-
-    Pencerenin en altına, içeriğin arkasında kalan dekoratif bir katman
-    yerleştirir. Katman `place` ile konduğu için `pack`/`grid` ile eklenen
-    içeriğin yerleşimini etkilemez; içerik bittiği yerden aşağısı düz gri
-    yerine desenli görünür."""
+    """Arka planı boş gri kalmayan pencere."""
 
     def __init__(self, master=None, **kwargs):
         kwargs.setdefault('background', COLORS['bg_light'])
@@ -298,13 +282,11 @@ class _ThemedToplevel(tk.Toplevel):
         if _WINDOW_BACKGROUND is None:
             return
 
-        # Döngüsel içe aktarmayı önlemek için çağrı anında yükleniyor.
         from .ui.background import ResponsiveBackground
 
         decoration = tk.Canvas(self, highlightthickness=0, bd=0, bg=COLORS['bg_light'])
         decoration.place(x=0, y=0, relwidth=1, relheight=1)
-        # Canvas.lower() canvas öğesini alçaltır; widget'ın kendisini en alta
-        # almak için Misc.lower çağrılmalı.
+        # Dekor katmanı en altta kalsın (Canvas.lower başka iş yapıyor).
         tk.Misc.lower(decoration)
         ResponsiveBackground(decoration, _WINDOW_BACKGROUND)
         self._decoration = decoration
@@ -324,12 +306,7 @@ def hex_to_rgb(value):
 
 
 def rounded_card(width, height, fill, glow=GRADIENT_START, radius=20):
-    """Yuvarlak köşeli, ince çerçeveli ve dışa doğru parlayan kart görseli.
-
-    Tkinter çerçeveleri köşe yarıçapını desteklemediği için kart bir görsel
-    olarak çizilir; aynı rengi kullanan form çerçevesi üstüne oturunca tek
-    parça yuvarlak bir kart gibi görünür. Görsel her yönde CARD_PADDING kadar
-    formdan büyüktür."""
+    """Giriş formunun arkasına konan, yuvarlak köşeli ve hafif parlayan kart."""
     pad = CARD_PADDING
     canvas_size = (width + pad * 2, height + pad * 2)
 
@@ -346,17 +323,14 @@ def rounded_card(width, height, fill, glow=GRADIENT_START, radius=20):
 
 
 def generate_app_icon(size=512):
-    """Mavi-mor gradyanlı squircle üzerine koltuk ızgarası.
-
-    Anti-kopya düzenindeki gibi bir sıra dolu bir sıra boş; dolu koltuklar
-    parlak, boş koltuklar saydam bırakılır."""
+    """Uygulama ikonu: mavi-mor zemin üzerine koltuk ızgarası."""
     scale = 4
     s = size * scale
     radius = int(s * 0.235)
 
     canvas = _diagonal_gradient(s, s, GRADIENT_START, GRADIENT_END, angle_deg=115).convert('RGBA')
 
-    # Üstten gelen cam parlaklığı, ikona derinlik veriyor.
+    # Üstteki parlaklık ikona derinlik hissi veriyor.
     highlight = Image.new('RGBA', (s, s), (0, 0, 0, 0))
     ImageDraw.Draw(highlight).ellipse(
         [-s * 0.35, -s * 0.80, s * 1.35, s * 0.44], fill=(255, 255, 255, 54))
@@ -367,7 +341,7 @@ def generate_app_icon(size=512):
     gap = int(s * 0.055)
     cell = (s - 2 * grid_pad - (cols - 1) * gap) / cols
     seat_radius = cell * 0.30
-    # Anti-kopya düzeni: bir sütun dolu, bir sütun boş.
+    # Bir sütun dolu, bir sütun boş: anti-kopya düzeni.
     dolu = {(r, c) for r in range(rows) for c in (0, 2)}
 
     glow = Image.new('RGBA', (s, s), (0, 0, 0, 0))
@@ -443,14 +417,10 @@ def _blend(arr, mask, color):
 
 
 def generate_panel_background(width, height, fade_power=1.6, strength=0.30):
-    """İçeriğin altında kalan boşluğu dolduran dekoratif katman: aşağı doğru
-    koyulaşan hafif renk geçişi ve sağ alt köşede sınav oturma düzenini
-    çağrıştıran silik koltuk ızgarası.
+    """İçeriğin altında kalan boşluk için arka plan üretir.
 
-    En üst satır COLORS['bg_light'] ile birebir aynı renktedir; böylece
-    üstündeki içerikle arasında görünür bir geçiş oluşmaz. `fade_power`
-    büyüdükçe üst bölge daha uzun süre düz kalır — üstüne widget yerleşen
-    pencerelerde bu, widget'ların arka plandan ayrışmasını önler."""
+    Üst kenarı panel rengiyle aynıdır, aşağı indikçe renklenir. fade_power
+    büyüdükçe üst bölge daha uzun süre düz kalır."""
     base = tuple(int(COLORS['bg_light'][i:i + 2], 16) for i in (1, 3, 5))
     primary = tuple(int(COLORS['primary'][i:i + 2], 16) for i in (1, 3, 5))
     success = tuple(int(COLORS['success'][i:i + 2], 16) for i in (1, 3, 5))
@@ -485,7 +455,7 @@ def generate_panel_background(width, height, fade_power=1.6, strength=0.30):
         for c in range(cols):
             x = x0 + c * (cell + gap)
             y = y0 + r * (cell + gap)
-            # Uygulamanın anti-kopya düzenindeki gibi bir sütun dolu, bir sütun boş.
+            # Bir sütun dolu, bir sütun boş.
             dolu = c % 2 == 0
             renk = (255, 255, 255, 105) if dolu else (255, 255, 255, 45)
             draw.rounded_rectangle([x, y, x + cell, y + cell], radius=cell * 0.24, fill=renk)
@@ -494,10 +464,7 @@ def generate_panel_background(width, height, fade_power=1.6, strength=0.30):
 
 
 def fade_top_to_base(img, fade_ratio=0.55):
-    """Görselin üst kısmını panel zemin rengine doğru eritir.
-
-    En üst satır tam olarak zemin rengi olur; böylece görsel, üstündeki içerik
-    çerçevesinin bittiği yerde görünür bir sınır oluşturmadan başlar."""
+    """Görselin üst kısmını panel rengine karıştırır, arada çizgi görünmesin diye."""
     base = np.array([int(COLORS['bg_light'][i:i + 2], 16) for i in (1, 3, 5)], dtype=np.float32)
     arr = np.array(img).astype(np.float32)
     height = arr.shape[0]
@@ -509,19 +476,14 @@ def fade_top_to_base(img, fade_ratio=0.55):
 
 
 def generate_window_background(width, height):
-    """Alt pencereler için, üst bölgesi daha uzun süre düz kalan dekor katmanı.
-
-    Bu pencerelerde widget'lar doğrudan pencereye yerleştiği için geçişin
-    yukarıda başlaması, widget'ların arka plandan kutu gibi ayrışmasına
-    yol açıyordu."""
+    """Alt pencereler için daha sade arka plan."""
     return generate_panel_background(width, height, fade_power=3.4, strength=0.26)
 
 
 def get_panel_background():
-    """Panel arka planını `(genislik, yukseklik) -> Image` üreteci olarak döndürür.
+    """Panel arka planını hazırlar.
 
-    `assets/panel_background.png|jpg` varsa o görsel kırpılıp üst kenarı zemine
-    eritilerek kullanılır; yoksa desen programatik üretilir."""
+    assets/panel_background.png (veya .jpg) varsa o kullanılır."""
     for ext in ('png', 'jpg', 'jpeg'):
         path = os.path.join(_ASSETS_DIR, f'panel_background.{ext}')
         if os.path.isfile(path):
@@ -545,9 +507,9 @@ def cover_resize(img, target_w, target_h):
 
 
 def get_login_background():
-    """`assets/login_background.png|jpg` varsa onu, yoksa üretilen gradyanı döndürür.
+    """Giriş ekranı arka planı.
 
-    Görsel ham çözünürlüğünde döner; pencere boyutuna uyarlama işi çağıranda."""
+    assets/login_background.png (veya .jpg) varsa o kullanılır."""
     for ext in ('png', 'jpg', 'jpeg'):
         path = os.path.join(_ASSETS_DIR, f'login_background.{ext}')
         if os.path.isfile(path):

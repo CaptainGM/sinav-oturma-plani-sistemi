@@ -1,11 +1,6 @@
-"""Kaskad silme yardımcıları.
+"""Bir kayıt silinince ona bağlı diğer kayıtları da temizleyen yardımcılar.
 
-MongoDB'de foreign key olmadığı için, bir kayıt silinirken ona referans veren
-belgeler burada açıkça temizlenir ya da ilgili alanları None'lanır. Silme
-işlemi yapan her ekran tek çağrı noktası olarak bu fonksiyonları kullanır.
-
-`bolumler` hiçbir koleksiyondan referans almaz (bolum_adi her yerde düz metin
-olarak tutulur), bu yüzden ayrı bir kaskad fonksiyonu yoktur."""
+Örneğin bir ders silinince o dersin sınavları ve öğrenci kayıtları da gider."""
 
 
 def delete_student(db, ogrenci_id):

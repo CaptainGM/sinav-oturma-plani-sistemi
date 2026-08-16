@@ -24,9 +24,9 @@ except Exception as e:
 
 
 def is_seat_empty(koltuk_no, sira_yapi):
-    """Anti-kopya düzeni: bir kutudaki çift numaralı koltuklar boş bırakılır.
+    """Anti-kopya düzeni: çift numaralı koltuklar boş bırakılır.
 
-    sira_yapi <= 1 ise hiçbir koltuk boşaltılmaz."""
+    Sıra yapısı 1 ise hiçbir koltuk boşaltılmaz."""
     if sira_yapi <= 1:
         return False
     return koltuk_no % 2 == 0
@@ -226,8 +226,7 @@ class SeatingMixin:
     def generate_seating_plan(self, sinav_id):
         """Öğrencileri karışık sırayla dersliklere yerleştirir.
 
-        Koltuklar sanal sütun kodlamasıyla saklanır: sutun_no = kutu_sutun * 10
-        + koltuk_no. Boş bırakılacak koltuklar için bkz. is_seat_empty()."""
+        Koltuk numarası sutun_no = kutu_sutun * 10 + koltuk_no olarak saklanır."""
         sinav_info = self.db.sinav_programi.find_one({'_id': sinav_id})
         if not sinav_info:
             messagebox.showerror("Hata", "Sınav bulunamadı!")
@@ -381,7 +380,6 @@ class SeatingMixin:
             messagebox.showwarning("Uyarı", "Bu sınav için derslik bulunamadı!")
             return
 
-        #
         view_window = tk.Toplevel(self.root)
         view_window.title(f"Oturma Planı - {ders_adi}")
         view_window.geometry("1200x800")
@@ -555,7 +553,7 @@ class SeatingMixin:
                                                      text=ogr_no, tags=(cell_tag,),
                                                      font=("Arial", 7), fill="white")
 
-                            # generate_seating_plan'daki kodlama 1-tabanlı.
+                            # Numaralandırma 1'den başlıyor.
                             sutun_no = (kutu_sutun + 1) * 10 + koltuk_no
                             canvas_widget.tag_bind(
                                 cell_tag, "<Button-1>",
@@ -781,8 +779,7 @@ class SeatingMixin:
         populate()
         tree.pack(fill=tk.BOTH, expand=True)
 
-        # Sonuçları DB'ye tekrar gitmeden, zaten yerelde tutulan all_rows
-        # üzerinden her tuş vuruşunda filtreler.
+        # Arama, veritabanına gitmeden yerel listeden yapılıyor.
         search_var.trace_add("write", lambda *_: populate(search_var.get()))
 
 

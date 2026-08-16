@@ -1,16 +1,14 @@
-"""Pencere boyutuyla birlikte ölçeklenen Canvas arka planı."""
+"""Pencere boyutuna uyum sağlayan arka plan."""
 from PIL import ImageTk
 
 from ..styles import cover_resize
 
 
 class ResponsiveBackground:
-    """Bir Canvas'a, pencere yeniden boyutlandıkça tazelenen arka plan bağlar.
+    """Pencere boyutu değiştikçe arka plan görselini yeniden ölçekler.
 
-    `source` ya bir PIL görselidir (oranı bozulmadan kırpılarak kaplanır) ya da
-    `(genislik, yukseklik) -> PIL.Image` imzalı bir üreteç fonksiyonudur.
-    Yeniden çizim, sürükleyerek boyutlandırma sırasında sürekli tetiklenmesin
-    diye kısa bir gecikmeyle sıraya alınır."""
+    `source` bir görsel ya da genişlik/yükseklik alıp görsel üreten bir
+    fonksiyon olabilir."""
 
     REDRAW_DELAY_MS = 60
 
@@ -31,7 +29,7 @@ class ResponsiveBackground:
 
     def _draw(self, width, height):
         self._job = None
-        # Ekran değişimlerinde canvas, gecikmeli çizim tetiklenmeden yok edilebilir.
+        # Ekran değişmişse çizilecek bir şey kalmamıştır.
         if not self.canvas.winfo_exists():
             return
         self._photo = ImageTk.PhotoImage(self._render(width, height))

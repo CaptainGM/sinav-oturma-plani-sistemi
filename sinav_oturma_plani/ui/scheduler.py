@@ -645,7 +645,7 @@ class SchedulerMixin:
 
 
     def show_exam_conflicts(self):
-        """Kayıtlı programı öğrenci bazında denetleyen salt-okunur çakışma raporu."""
+        """Aynı öğrencinin üst üste binen sınavı var mı diye kontrol eder."""
         if not self.current_bolum:
             messagebox.showerror("Hata", "Önce bir bölüm seçin!")
             return
@@ -672,7 +672,7 @@ class SchedulerMixin:
             ders = ders_map.get(sp['ders_id'])
             if not ders:
                 continue
-            # sinav_saati "HH:MM:SS" string olarak saklanıyor (bkz. optimized_exam_scheduler)
+            # Saat "HH:MM:SS" metni olarak saklanıyor.
             saat_time = datetime.strptime(sp['sinav_saati'], '%H:%M:%S').time()
             baslangic = datetime.combine(sp['sinav_tarihi'].date(), saat_time)
             bitis = baslangic + timedelta(minutes=sp.get('sinav_suresi') or 0)

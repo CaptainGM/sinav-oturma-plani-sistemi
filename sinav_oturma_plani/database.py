@@ -79,7 +79,7 @@ class DatabaseManager:
         admin_email = os.environ.get('ADMIN_EMAIL', 'admin@kocaeli.edu.tr')
         admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
-        # Eski SHA256 formatında yazılır; ilk girişte bcrypt'e yükseltilir.
+        # Şifre ilk girişte otomatik olarak daha güvenli biçime çevrilir.
         hashed_pass = hashlib.sha256(admin_password.encode()).hexdigest()
         try:
             self.kullanicilar.insert_one({

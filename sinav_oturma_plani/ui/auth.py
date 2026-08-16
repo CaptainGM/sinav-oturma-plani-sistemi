@@ -15,9 +15,9 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 class AuthMixin:
     def _build_auth_screen(self, subtitle):
-        """Giriş/kayıt ekranlarının ortak iskeleti: pencereyle birlikte
-        ölçeklenen arka plan ve ortalanmış form kutusu. Form alanlarının
-        eklendiği Frame'i döndürür."""
+        """Giriş ve kayıt ekranlarının ortak iskeletini kurar.
+
+        Form alanlarının ekleneceği çerçeveyi döndürür."""
         self.clear_screen()
 
         canvas = tk.Canvas(self.root, highlightthickness=0, bd=0, bg=COLORS['bg_dark'])
@@ -32,7 +32,7 @@ class AuthMixin:
         subtitle_item = canvas.create_text(0, 0, text=subtitle, font=("Segoe UI", 10),
                                             fill=COLORS['text_muted'], anchor="n")
 
-        # Kart görseli formdan önce oluşturuluyor ki formun altında kalsın.
+        # Kart, formun arkasında kalması için önce çiziliyor.
         card_item = canvas.create_image(0, 0, anchor="n")
         form_frame = tk.Frame(canvas, bg=COLORS['bg_dark'], padx=45, pady=35)
         form_item = canvas.create_window(0, 0, window=form_frame, anchor="n")
@@ -40,7 +40,7 @@ class AuthMixin:
         card_size = {'value': None}
 
         def layout(_event=None):
-            # Ekran değişiminde canvas, gecikmeli çağrı gelmeden yok edilebilir.
+            # Ekran değişmişse yerleştirilecek bir şey kalmamıştır.
             if not canvas.winfo_exists():
                 return
 
@@ -66,8 +66,7 @@ class AuthMixin:
             canvas.coords(form_item, cx, top + 235)
 
         canvas.bind("<Configure>", layout, add="+")
-        # Form alanları bu fonksiyon döndükten sonra ekleniyor; yüksekliği
-        # kesinleştiğinde yeniden ortalayabilmek için formu da dinliyoruz.
+        # Form alanları sonradan eklendiği için, boyu belli olunca tekrar ortalanmalı.
         form_frame.bind("<Configure>", layout, add="+")
         self.root.after(0, layout)
         return form_frame

@@ -6,7 +6,7 @@ from tkinter import ttk
 from ..styles import COLORS
 from .background import ResponsiveBackground
 
-# Özet kartlarının üst şeridinde sırayla kullanılan vurgu renkleri.
+# Kartların üst şeridinde sırayla kullanılan renkler.
 CARD_ACCENTS = ('#3884f6', '#8b5cf6', '#27ae60', '#f39c12', '#2980b9', '#ec4899')
 
 
@@ -52,7 +52,7 @@ class DashboardMixin:
             koordinator_menu.add_command(label="Derslik Düzenle", command=self.show_edit_classroom)
             koordinator_menu.add_command(label="Derslik Listele/Ara", command=self.show_classroom_list)
 
-            # Ders/öğrenci/sınav işlemleri en az bir derslik girilmeden anlamsız.
+            # Derslik girilmeden diğer menüler anlamsız.
             if self.check_derslik_requirement():
                 ders_menu = tk.Menu(menubar, tearoff=0)
                 menubar.add_cascade(label="Ders İşlemleri", menu=ders_menu)
@@ -87,10 +87,7 @@ class DashboardMixin:
                 sinav_menu.add_command(label="Sınav Takvimi (Genel Görünüm)", command=self.show_exam_calendar)
 
     def _build_scrollable_body(self):
-        """Panel gövdesi. İçerik pencereye sığmadığında kaydırma çubuğu belirir;
-        sığdığında dekor katmanı kalan boşluğu doldurur.
-
-        `(icerik_cercevesi, yerlesimi_tazeleyen_fonksiyon)` döndürür."""
+        """Panel gövdesi. İçerik pencereye sığmazsa kaydırma çubuğu çıkar."""
         outer = tk.Frame(self.root, bg=COLORS['bg_light'])
         outer.pack(fill=tk.BOTH, expand=True)
 
@@ -113,8 +110,7 @@ class DashboardMixin:
 
             deco = getattr(self, '_panel_decoration', None)
             if deco is not None and deco.winfo_exists():
-                # Dekor dışındaki içeriğin kapladığı yer kadarını çıkarıp
-                # kalan boşluğu dekora veriyoruz.
+                # Kalan boşluğu dekor katmanına ver.
                 kullanilan = inner.winfo_reqheight() - int(deco.cget('height'))
                 deco.configure(height=max(90, height - kullanilan))
 
@@ -134,19 +130,14 @@ class DashboardMixin:
             if inner.winfo_reqheight() > canvas.winfo_height():
                 canvas.yview_scroll(-int(event.delta / 120), "units")
 
-        # bind_all yalnızca imleç panelin üzerindeyken bağlanır; aksi halde
-        # açık olan diğer pencerelerin tekerlek olaylarını da yakalardı.
+        # Tekerlek sadece imleç panelin üzerindeyken çalışsın.
         canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", on_wheel))
         canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
 
         return inner, refresh
 
     def _build_decoration(self, parent):
-        """İçeriğin altında kalan boşluğu dekoratif arka planla doldurur.
-
-        Ayrı bir katman olarak en sona yerleştirilir; böylece içerik ne kadar
-        yer kaplarsa kaplasın dekor tam onun bittiği yerden başlar ve araya
-        görünür bir sınır girmez."""
+        """İçeriğin altında kalan boşluğu arka plan görseliyle doldurur."""
         canvas = tk.Canvas(parent, highlightthickness=0, bd=0, bg=COLORS['bg_light'],
                             height=90)
         canvas.pack(fill=tk.X)

@@ -11,16 +11,14 @@ from .. import cascades
 
 
 def _like_filter(*fields, query):
-    """Verilen alanlarda büyük/küçük harf duyarsız alt dize araması.
-
-    Kullanıcı girdisi regex metakarakteri içerebileceği için escape edilir."""
+    """Verilen alanlarda büyük/küçük harf ayırmadan arama yapar."""
     pattern = re.escape(query)
     return {'$or': [{f: {'$regex': pattern, '$options': 'i'}} for f in fields]}
 
 
 class StudentMixin:
     def download_student_template(self):
-        """upload_student_excel'in beklediği sütunlarla örnek bir Excel şablonu üretir."""
+        """Öğrenci yükleme ekranının beklediği sütunlarla örnek bir Excel dosyası üretir."""
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx")],
@@ -306,9 +304,8 @@ class StudentMixin:
                     if not ogrenci_no or ogrenci_no == 'nan' or ogrenci_no == '':
                         continue
 
-                    # ON DUPLICATE KEY UPDATE ... email=COALESCE(VALUES(email), email)
-                    # karşılığı: bulunamazsa oluştur, bulunursa ad/sınıfı her zaman,
-                    # e-postayı SADECE yeni değer varsa güncelle (var olanı boşla silme).
+                    # Öğrenci yoksa ekle, varsa güncelle. E-posta sadece yeni
+                    # bir değer geldiyse değişir, boş veriyle silinmez.
                     set_fields = {'ad_soyad': ad_soyad, 'sinif': sinif}
                     if email is not None:
                         set_fields['email'] = email
@@ -440,9 +437,8 @@ class StudentMixin:
 
             students = list(self.db.ogrenciler.find(filtre).sort('ogrenci_no', 1))
 
-            # Tkinter tag'leri string olmak zorunda; ObjectId'yi buradan itibaren
-            # str() ile saklayıp okurken tekrar ObjectId()'ye çeviriyoruz —
-            # aksi halde Mongo sorgularında tip uyuşmazlığından sessizce eşleşmez.
+            # Tkinter etiketleri metin olmak zorunda, kaydın kimliğini metne
+            # çevirip okurken geri alıyoruz.
             for student in students:
                 student_tree.insert("", tk.END,
                                      values=(student['ogrenci_no'], student['ad_soyad'], student.get('sinif')),
@@ -529,8 +525,7 @@ class StudentMixin:
         search_entry = tk.Entry(left_frame, font=("Arial", 10), width=20)
         search_entry.pack(pady=5)
 
-        # exportselection=False olmadan, aynı penceredeki iki liste kutusundan
-        # birini seçmek diğerinin seçimini temizler (Tk'nin PRIMARY seçim sahipliği).
+        # Bu ayar olmadan iki listeden biri seçilince diğerinin seçimi siliniyor.
         student_listbox = tk.Listbox(left_frame, font=("Arial", 10), height=15,
                                       exportselection=False)
         student_listbox.pack(fill=tk.BOTH, expand=True, pady=5)

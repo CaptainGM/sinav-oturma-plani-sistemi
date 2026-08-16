@@ -1,5 +1,4 @@
-"""Uygulamanın kompozisyon kökü: tüm ekran mixin'lerini birleştiren
-SinavTakvimiApp sınıfı."""
+"""Tüm ekranları bir araya getiren ana uygulama sınıfı."""
 import queue
 import threading
 import tkinter as tk
@@ -33,8 +32,7 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
         configure_styles(self.style)
         apply_widget_defaults(self.root)
 
-        # PhotoImage referansları self üzerinde tutulmalı, aksi halde çöp
-        # toplanır ve görseller boş çıkar.
+        # Görselleri burada saklamazsak ekranda boş görünüyorlar.
         base_icon = get_app_icon(512)
         self.app_icon_img = ImageTk.PhotoImage(base_icon.resize((64, 64), Image.LANCZOS))
         self.header_icon_img = ImageTk.PhotoImage(base_icon.resize((44, 44), Image.LANCZOS))
@@ -42,7 +40,6 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
         self.root.iconphoto(True, self.app_icon_img)
         self.login_bg_source = get_login_background()
         self.panel_bg_source = get_panel_background()
-        # Alt pencerelerde fotoğraf yerine daha sakin olan üretilen desen kullanılıyor.
         set_window_background(generate_window_background)
 
         self.db = DatabaseManager()
@@ -56,7 +53,7 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
     def clear_screen(self):
         for widget in self.root.winfo_children():
             widget.destroy()
-        # Ana menüden çıkışta üst menü çubuğu ekranda kalmasın.
+        # Çıkış yapınca üst menü ekranda kalmasın.
         self.root.config(menu=tk.Menu(self.root))
 
 
@@ -67,7 +64,7 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
         return self.db.derslikler.count_documents({'bolum_adi': self.current_bolum}) > 0
 
     def log_activity(self, islem, detay=None):
-        # Loglama arızası ana işlemi engellememeli.
+        # Kayıt tutulamazsa bile asıl işlem devam etsin.
         try:
             self.db.aktivite_log.insert_one({
                 'kullanici': self.current_user,
@@ -80,11 +77,9 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
             print(f"Uyarı: aktivite kaydı yazılamadı: {e}")
 
     def run_background_task(self, title, worker):
-        """Uzun süren bir işi ilerleme çubuğuyla ayrı bir thread'de çalıştırır.
+        """Uzun süren bir işi ilerleme çubuğu göstererek arka planda çalıştırır.
 
-        `worker(progress_callback)` bitince gösterilecek sonuç mesajını döndürür.
-        Tkinter thread-safe olmadığı için widget'lar sadece ana thread'deki
-        poll() içinde güncellenir."""
+        Böylece dosya yüklenirken ekran donmaz."""
         progress_window = tk.Toplevel(self.root)
         progress_window.title(title)
         progress_window.geometry("420x140")

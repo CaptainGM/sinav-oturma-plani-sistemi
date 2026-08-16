@@ -7,11 +7,10 @@ from .. import cascades
 
 
 def compute_classroom_capacity(enine, boyuna, sira_yapi):
-    """Bir dersliğin gerçek oturma kapasitesini hesaplar: her kutuda anti-kopya
-    boşluğu nedeniyle sadece tek sıradaki koltuklar (1, 3, 5, ...) dolar —
-    bkz. seating.py'deki is_seat_empty(). Kapasite bu yüzden elle girilmez,
-    buradan otomatik hesaplanır; aksi halde kullanıcının girdiği sayı fiziksel
-    olarak oturtulabilecek öğrenci sayısıyla tutarsız kalabilir."""
+    """Dersliğe kaç öğrenci oturabileceğini hesaplar.
+
+    Anti-kopya boşluğu bırakıldığı için her kutudaki koltukların yarısı dolar.
+    Bu yüzden kapasite elle girilmez, buradan hesaplanır."""
     if enine <= 0 or boyuna <= 0 or sira_yapi <= 0:
         return 0
     doluluk_kutu_basi = (sira_yapi + 1) // 2

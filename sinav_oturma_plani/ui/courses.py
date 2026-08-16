@@ -10,8 +10,7 @@ from .. import cascades
 
 class CourseMixin:
     def download_course_template(self):
-        """upload_course_excel'in beklediği (SINIF başlığı + DERS KODU sütunlu)
-        formatta örnek bir Excel şablonu üretir."""
+        """Ders yükleme ekranının beklediği formatta örnek bir Excel dosyası üretir."""
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx")],
