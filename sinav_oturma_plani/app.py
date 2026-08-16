@@ -7,7 +7,7 @@ from datetime import datetime
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 
-from .styles import configure_styles, get_app_icon, get_login_background
+from .styles import configure_styles, get_app_icon, get_login_background, get_panel_background
 from .database import DatabaseManager
 from .ui.auth import AuthMixin
 from .ui.dashboard import DashboardMixin
@@ -38,6 +38,7 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
         self.login_icon_img = ImageTk.PhotoImage(base_icon.resize((150, 150), Image.LANCZOS))
         self.root.iconphoto(True, self.app_icon_img)
         self.login_bg_source = get_login_background()
+        self.panel_bg_source = get_panel_background()
 
         self.db = DatabaseManager()
         self.current_user = None

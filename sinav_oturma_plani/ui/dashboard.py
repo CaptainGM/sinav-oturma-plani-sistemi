@@ -4,6 +4,7 @@ from datetime import datetime
 from tkinter import ttk
 
 from ..styles import COLORS
+from .background import ResponsiveBackground
 
 
 class DashboardMixin:
@@ -23,6 +24,8 @@ class DashboardMixin:
             self._build_dashboard_cards(body)
             self._build_quick_actions(body)
             self._build_upcoming_exams(body)
+
+        self._build_decoration(body)
 
     def _build_menubar(self):
         menubar = tk.Menu(self.root)
@@ -79,6 +82,17 @@ class DashboardMixin:
                 sinav_menu.add_command(label="Gözetmen Ata", command=self.show_assign_proctor)
                 sinav_menu.add_command(label="Çakışma Raporu", command=self.show_exam_conflicts)
                 sinav_menu.add_command(label="Sınav Takvimi (Genel Görünüm)", command=self.show_exam_calendar)
+
+    def _build_decoration(self, parent):
+        """İçeriğin altında kalan boşluğu dekoratif arka planla doldurur.
+
+        Ayrı bir katman olarak en sona yerleştirilir; böylece içerik ne kadar
+        yer kaplarsa kaplasın dekor tam onun bittiği yerden başlar ve araya
+        görünür bir sınır girmez."""
+        canvas = tk.Canvas(parent, highlightthickness=0, bd=0, bg=COLORS['bg_light'])
+        canvas.pack(fill=tk.BOTH, expand=True)
+        ResponsiveBackground(canvas, self.panel_bg_source)
+        return canvas
 
     def _build_header(self):
         header = tk.Frame(self.root, bg=COLORS['bg_panel'])
@@ -197,7 +211,7 @@ class DashboardMixin:
                       padx=10, pady=16, command=command).grid(row=0, column=i, padx=8, sticky="ew")
             row.grid_columnconfigure(i, weight=1, uniform="action")
 
-    def _build_upcoming_exams(self, parent, limit=8):
+    def _build_upcoming_exams(self, parent, limit=6):
         bugun = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         sp_docs = list(self.db.sinav_programi
                        .find({'bolum_adi': self.current_bolum, 'sinav_tarihi': {'$gte': bugun}})
@@ -220,14 +234,14 @@ class DashboardMixin:
             {'_id': {'$in': [s['gozetmen_id'] for s in sp_docs if s.get('gozetmen_id')]}})}
 
         table_frame = tk.Frame(parent, bg=COLORS['bg_light'])
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=(12, 30))
+        table_frame.pack(fill=tk.X, padx=40, pady=(12, 24))
 
         columns = ("Tarih", "Saat", "Ders", "Derslik", "Gözetmen")
         tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=len(sp_docs))
         for col, width in zip(columns, (110, 80, 280, 150, 190)):
             tree.heading(col, text=col)
             tree.column(col, width=width, anchor="w")
-        tree.pack(fill=tk.BOTH, expand=True)
+        tree.pack(fill=tk.X)
 
         for sp in sp_docs:
             ders = ders_map.get(sp['ders_id'])

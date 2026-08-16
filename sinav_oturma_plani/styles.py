@@ -187,6 +187,73 @@ def generate_login_background(width=1600, height=1000):
     return Image.fromarray(arr, mode='RGB')
 
 
+def _blend(arr, mask, color):
+    for i in range(3):
+        arr[:, :, i] = arr[:, :, i] * (1 - mask) + color[i] * mask
+    return arr
+
+
+def generate_panel_background(width, height):
+    """Ana panelde içeriğin altında kalan boşluğu dolduran dekoratif katman:
+    aşağı doğru koyulaşan hafif renk geçişi ve sağ alt köşede sınav oturma
+    düzenini çağrıştıran silik koltuk ızgarası.
+
+    En üst satır COLORS['bg_light'] ile birebir aynı renktedir; böylece
+    üstündeki içerik çerçevesiyle arasında görünür bir geçiş oluşmaz."""
+    base = tuple(int(COLORS['bg_light'][i:i + 2], 16) for i in (1, 3, 5))
+    primary = tuple(int(COLORS['primary'][i:i + 2], 16) for i in (1, 3, 5))
+    success = tuple(int(COLORS['success'][i:i + 2], 16) for i in (1, 3, 5))
+
+    arr = np.zeros((height, width, 3), dtype=np.float32)
+    arr[:, :] = base
+
+    yy, xx = np.ogrid[:height, :width]
+    asagi = (yy / max(height - 1, 1)) ** 1.6
+    saga = np.clip((xx / max(width - 1, 1) - 0.15) / 0.85, 0, 1) ** 1.2
+
+    arr = _blend(arr, asagi * (0.30 + 0.70 * saga) * 0.30, primary)
+    arr = _blend(arr, asagi * np.clip(1 - xx / (width * 0.45), 0, 1) ** 1.5 * 0.12, success)
+    img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode='RGB')
+
+    cols, rows = 8, 4
+    cell = min(height * 0.20, width * 0.045)
+    if cell < 8:
+        return img
+
+    layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
+    gap = cell * 0.38
+    motif_w = cols * cell + (cols - 1) * gap
+    motif_h = rows * cell + (rows - 1) * gap
+    x0 = width - motif_w * 0.70
+    y0 = height - motif_h * 0.62
+
+    for r in range(rows):
+        for c in range(cols):
+            x = x0 + c * (cell + gap)
+            y = y0 + r * (cell + gap)
+            # Uygulamanın anti-kopya düzenindeki gibi bir sütun dolu, bir sütun boş.
+            dolu = c % 2 == 0
+            renk = (255, 255, 255, 105) if dolu else (255, 255, 255, 45)
+            draw.rounded_rectangle([x, y, x + cell, y + cell], radius=cell * 0.24, fill=renk)
+
+    return Image.alpha_composite(img.convert('RGBA'), layer).convert('RGB')
+
+
+def get_panel_background():
+    """`assets/panel_background.png|jpg` varsa o görseli, yoksa boyuta göre
+    desen üreten fonksiyonun kendisini döndürür."""
+    for ext in ('png', 'jpg', 'jpeg'):
+        path = os.path.join(_ASSETS_DIR, f'panel_background.{ext}')
+        if os.path.isfile(path):
+            try:
+                return Image.open(path).convert('RGB')
+            except Exception as e:
+                print(f"Uyarı: assets/panel_background.{ext} okunamadı: {e}")
+    return generate_panel_background
+
+
 def cover_resize(img, target_w, target_h):
     """Görseli oranını bozmadan hedef boyutu kaplayacak şekilde ölçekleyip ortadan kırpar."""
     src_w, src_h = img.size

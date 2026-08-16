@@ -3,10 +3,10 @@ import re
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from PIL import ImageTk
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from ..styles import COLORS, cover_resize, hash_password, verify_password, is_bcrypt_hash
+from ..styles import COLORS, hash_password, verify_password, is_bcrypt_hash
+from .background import ResponsiveBackground
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -21,7 +21,8 @@ class AuthMixin:
         canvas = tk.Canvas(self.root, highlightthickness=0, bd=0, bg=COLORS['bg_dark'])
         canvas.pack(fill=tk.BOTH, expand=True)
 
-        bg_item = canvas.create_image(0, 0, anchor="nw")
+        ResponsiveBackground(canvas, self.login_bg_source)
+
         icon_item = canvas.create_image(0, 0, image=self.login_icon_img, anchor="n")
         title_item = canvas.create_text(0, 0, text="Sınav Takvimi Yönetim Sistemi",
                                          font=("Segoe UI", 22, "bold"),
@@ -31,13 +32,6 @@ class AuthMixin:
 
         form_frame = tk.Frame(canvas, bg=COLORS['bg_dark'], padx=45, pady=35)
         form_item = canvas.create_window(0, 0, window=form_frame, anchor="n")
-
-        state = {'size': None, 'job': None}
-
-        def draw_background(w, h):
-            state['job'] = None
-            self._auth_bg_img = ImageTk.PhotoImage(cover_resize(self.login_bg_source, w, h))
-            canvas.itemconfig(bg_item, image=self._auth_bg_img)
 
         def layout(_event=None):
             w, h = canvas.winfo_width(), canvas.winfo_height()
@@ -53,13 +47,7 @@ class AuthMixin:
             canvas.coords(subtitle_item, cx, top + 200)
             canvas.coords(form_item, cx, top + 235)
 
-            if state['size'] != (w, h):
-                state['size'] = (w, h)
-                if state['job'] is not None:
-                    canvas.after_cancel(state['job'])
-                state['job'] = canvas.after(60, lambda: draw_background(w, h))
-
-        canvas.bind("<Configure>", layout)
+        canvas.bind("<Configure>", layout, add="+")
         self.root.after(0, layout)
         return form_frame
 
