@@ -7,8 +7,9 @@ from datetime import datetime
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 
-from .styles import (apply_widget_defaults, configure_styles, get_app_icon,
-                      get_login_background, get_panel_background)
+from .styles import (apply_widget_defaults, configure_styles, generate_window_background,
+                      get_app_icon, get_login_background, get_panel_background,
+                      set_window_background)
 from .database import DatabaseManager
 from .ui.auth import AuthMixin
 from .ui.dashboard import DashboardMixin
@@ -41,6 +42,8 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
         self.root.iconphoto(True, self.app_icon_img)
         self.login_bg_source = get_login_background()
         self.panel_bg_source = get_panel_background()
+        # Alt pencerelerde fotoğraf yerine daha sakin olan üretilen desen kullanılıyor.
+        set_window_background(generate_window_background)
 
         self.db = DatabaseManager()
         self.current_user = None

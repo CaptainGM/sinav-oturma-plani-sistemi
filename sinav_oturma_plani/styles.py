@@ -3,9 +3,11 @@ import hashlib
 import os
 import tkinter as tk
 
+import tkinter.font as tkfont
+
 import bcrypt
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageTk
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _ASSETS_DIR = os.path.join(_PROJECT_ROOT, 'assets')
@@ -109,38 +111,206 @@ def apply_widget_defaults(root):
     root.option_add('*Listbox.background', COLORS['bg_card'])
 
 
-class _HoverButton(tk.Button):
-    """Üzerine gelindiğinde arka planı açılan/koyulaşan tk.Button."""
+def _shade(rgb, amount):
+    """amount > 0 açar, < 0 koyulaştırır."""
+    if amount >= 0:
+        return tuple(int(c + (255 - c) * amount) for c in rgb)
+    return tuple(max(0, int(c * (1 + amount))) for c in rgb)
+
+
+def _pill(width, height, rgb, radius, supersample=3):
+    """Üstten alta hafif gradyanlı, yuvarlak köşeli buton gövdesi."""
+    big = (width * supersample, height * supersample)
+    gradient = _diagonal_gradient(big[0], big[1], _shade(rgb, 0.12), _shade(rgb, -0.08),
+                                   angle_deg=90)
+
+    mask = Image.new('L', big, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, big[0] - 1, big[1] - 1],
+                                            radius=radius * supersample, fill=255)
+
+    img = Image.new('RGBA', big, (0, 0, 0, 0))
+    img.paste(gradient, (0, 0), mask)
+    return img.resize((width, height), Image.LANCZOS)
+
+
+class _RoundedButton(tk.Canvas):
+    """tk.Button yerine geçen, yuvarlak köşeli modern buton.
+
+    Tkinter'ın klasik butonu köşe yarıçapını ve düz tasarımı desteklemediği
+    için gövde PIL ile çizilip Canvas'a görsel olarak yerleştirilir; metin
+    Tk'nin kendi metin öğesiyle yazılır (font kalitesi bozulmasın diye).
+
+    tk.Button ile aynı şekilde kullanılabilsin diye text/command/bg/fg/font/
+    state seçeneklerini, `invoke()`, `cget()` ve `config()` çağrılarını
+    destekler. relief, bd, activebackground gibi klasik görünüm seçenekleri
+    sessizce yok sayılır."""
+
+    RADIUS = 8
+    _SWALLOWED = ('relief', 'bd', 'borderwidth', 'activebackground', 'activeforeground',
+                   'highlightthickness', 'highlightbackground', 'anchor', 'justify',
+                   'overrelief', 'default', 'takefocus')
+
+    def __init__(self, master=None, text='', command=None, bg=None, fg=None,
+                 font=None, padx=None, pady=None, width=None, height=None,
+                 state='normal', cursor='hand2', **_legacy):
+        self._text = text
+        self._command = command
+        self._fill = bg or COLORS['accent']
+        self._fg = fg or COLORS['text_light']
+        self._font = font or ('Segoe UI', 10, 'bold')
+        self._padx = 24 if padx is None else max(int(padx), 14)
+        self._pady = 11 if pady is None else max(int(pady), 8)
+        self._min_chars = width
+        self._min_lines = height
+        self._state = state
+        self._photo = None
+
+        try:
+            parent_bg = master.cget('background')
+        except Exception:
+            parent_bg = COLORS['bg_light']
+
+        box = self._measure()
+        super().__init__(master, width=box[0], height=box[1], highlightthickness=0,
+                          bd=0, bg=parent_bg, cursor='' if state == 'disabled' else cursor)
+
+        self._body = self.create_image(0, 0, anchor='nw')
+        self._label = self.create_text(box[0] // 2, box[1] // 2, text=self._text,
+                                        fill=self._fg, font=self._font)
+        self._paint()
+
+        self.bind('<Enter>', lambda _e: self._paint(hover=True))
+        self.bind('<Leave>', lambda _e: self._paint())
+        self.bind('<Button-1>', lambda _e: self._paint(press=True))
+        self.bind('<ButtonRelease-1>', self._on_release)
+
+    def _measure(self):
+        font = tkfont.Font(font=self._font)
+        line = font.metrics('linespace')
+        width = font.measure(self._text) + self._padx * 2
+        height = line + self._pady * 2
+        if self._min_chars:
+            width = max(width, int(self._min_chars) * font.measure('0') + self._padx * 2)
+        if self._min_lines:
+            height = max(height, int(self._min_lines) * line + self._pady)
+        return int(width), int(height)
+
+    def _rgb(self, color):
+        if isinstance(color, str) and color.startswith('#') and len(color) == 7:
+            return hex_to_rgb(color)
+        try:
+            return tuple(c >> 8 for c in self.winfo_rgb(color))
+        except tk.TclError:
+            return hex_to_rgb(COLORS['accent'])
+
+    def _paint(self, hover=False, press=False):
+        width, height = int(self['width']), int(self['height'])
+        rgb = self._rgb(self._fill)
+
+        if self._state == 'disabled':
+            rgb = tuple((c + b) // 2 for c, b in zip(rgb, hex_to_rgb(COLORS['bg_light'])))
+        elif press:
+            rgb = _shade(rgb, -0.16)
+        elif hover:
+            rgb = _shade(rgb, 0.14)
+
+        self._photo = ImageTk.PhotoImage(_pill(width, height, rgb, self.RADIUS))
+        self.itemconfig(self._body, image=self._photo)
+        self.tag_raise(self._label)
+
+    def _on_release(self, event):
+        self._paint(hover=True)
+        if 0 <= event.x < int(self['width']) and 0 <= event.y < int(self['height']):
+            self.invoke()
+
+    def invoke(self):
+        if self._state != 'disabled' and self._command:
+            return self._command()
+
+    def cget(self, key):
+        return {'text': self._text, 'state': self._state, 'command': self._command,
+                 'bg': self._fill, 'background': self._fill,
+                 'fg': self._fg, 'foreground': self._fg}.get(key) \
+            if key in ('text', 'state', 'command', 'bg', 'background', 'fg', 'foreground') \
+            else super().cget(key)
+
+    __getitem__ = cget
+
+    def configure(self, cnf=None, **kw):
+        resize = redraw = False
+
+        if 'text' in kw:
+            self._text = kw.pop('text')
+            resize = True
+        if 'state' in kw:
+            self._state = kw.pop('state')
+            redraw = True
+        if 'command' in kw:
+            self._command = kw.pop('command')
+        for key in ('bg', 'background'):
+            if key in kw:
+                self._fill = kw.pop(key)
+                redraw = True
+        for key in ('fg', 'foreground'):
+            if key in kw:
+                self._fg = kw.pop(key)
+                redraw = True
+        for key in self._SWALLOWED + ('padx', 'pady', 'font', 'image'):
+            kw.pop(key, None)
+
+        if resize:
+            width, height = self._measure()
+            super().configure(width=width, height=height)
+            self.coords(self._label, width // 2, height // 2)
+            self.itemconfig(self._label, text=self._text)
+        if resize or redraw:
+            self.itemconfig(self._label, fill=self._fg)
+            self._paint()
+        if cnf is not None or kw:
+            return super().configure(cnf, **kw)
+
+    config = configure
+
+
+tk.Button = _RoundedButton
+
+_WINDOW_BACKGROUND = None
+
+
+def set_window_background(source):
+    """Alt pencerelerin dekoratif arka planını belirler (görsel ya da üreteç)."""
+    global _WINDOW_BACKGROUND
+    _WINDOW_BACKGROUND = source
+
+
+class _ThemedToplevel(tk.Toplevel):
+    """Arka planı boş kalmayan Toplevel.
+
+    Pencerenin en altına, içeriğin arkasında kalan dekoratif bir katman
+    yerleştirir. Katman `place` ile konduğu için `pack`/`grid` ile eklenen
+    içeriğin yerleşimini etkilemez; içerik bittiği yerden aşağısı düz gri
+    yerine desenli görünür."""
 
     def __init__(self, master=None, **kwargs):
+        kwargs.setdefault('background', COLORS['bg_light'])
         super().__init__(master, **kwargs)
-        self.bind('<Enter>', self._on_enter, add='+')
-        self.bind('<Leave>', self._on_leave, add='+')
 
-    def _on_enter(self, event):
-        if str(self['state']) == 'disabled':
+        if _WINDOW_BACKGROUND is None:
             return
-        self._normal_bg = self.cget('background')
-        self.config(background=self._hover_color(self._normal_bg), cursor='hand2')
 
-    def _on_leave(self, event):
-        if hasattr(self, '_normal_bg'):
-            self.config(background=self._normal_bg, cursor='')
+        # Döngüsel içe aktarmayı önlemek için çağrı anında yükleniyor.
+        from .ui.background import ResponsiveBackground
 
-    def _hover_color(self, color):
-        try:
-            r, g, b = (c >> 8 for c in self.winfo_rgb(color))
-        except tk.TclError:
-            return color
-        luminance = 0.299 * r + 0.587 * g + 0.114 * b
-        if luminance > 140:
-            r, g, b = (max(0, int(c * 0.88)) for c in (r, g, b))
-        else:
-            r, g, b = (min(255, int(c + (255 - c) * 0.18)) for c in (r, g, b))
-        return f'#{r:02x}{g:02x}{b:02x}'
+        decoration = tk.Canvas(self, highlightthickness=0, bd=0, bg=COLORS['bg_light'])
+        decoration.place(x=0, y=0, relwidth=1, relheight=1)
+        # Canvas.lower() canvas öğesini alçaltır; widget'ın kendisini en alta
+        # almak için Misc.lower çağrılmalı.
+        tk.Misc.lower(decoration)
+        ResponsiveBackground(decoration, _WINDOW_BACKGROUND)
+        self._decoration = decoration
 
 
-tk.Button = _HoverButton
+tk.Toplevel = _ThemedToplevel
 
 
 GRADIENT_START = (56, 132, 246)
@@ -197,7 +367,8 @@ def generate_app_icon(size=512):
     gap = int(s * 0.055)
     cell = (s - 2 * grid_pad - (cols - 1) * gap) / cols
     seat_radius = cell * 0.30
-    dolu = {(0, 0), (0, 2), (1, 1), (2, 0), (2, 2)}
+    # Anti-kopya düzeni: bir sütun dolu, bir sütun boş.
+    dolu = {(r, c) for r in range(rows) for c in (0, 2)}
 
     glow = Image.new('RGBA', (s, s), (0, 0, 0, 0))
     glow_draw = ImageDraw.Draw(glow)
@@ -271,13 +442,15 @@ def _blend(arr, mask, color):
     return arr
 
 
-def generate_panel_background(width, height):
-    """Ana panelde içeriğin altında kalan boşluğu dolduran dekoratif katman:
-    aşağı doğru koyulaşan hafif renk geçişi ve sağ alt köşede sınav oturma
-    düzenini çağrıştıran silik koltuk ızgarası.
+def generate_panel_background(width, height, fade_power=1.6, strength=0.30):
+    """İçeriğin altında kalan boşluğu dolduran dekoratif katman: aşağı doğru
+    koyulaşan hafif renk geçişi ve sağ alt köşede sınav oturma düzenini
+    çağrıştıran silik koltuk ızgarası.
 
     En üst satır COLORS['bg_light'] ile birebir aynı renktedir; böylece
-    üstündeki içerik çerçevesiyle arasında görünür bir geçiş oluşmaz."""
+    üstündeki içerikle arasında görünür bir geçiş oluşmaz. `fade_power`
+    büyüdükçe üst bölge daha uzun süre düz kalır — üstüne widget yerleşen
+    pencerelerde bu, widget'ların arka plandan ayrışmasını önler."""
     base = tuple(int(COLORS['bg_light'][i:i + 2], 16) for i in (1, 3, 5))
     primary = tuple(int(COLORS['primary'][i:i + 2], 16) for i in (1, 3, 5))
     success = tuple(int(COLORS['success'][i:i + 2], 16) for i in (1, 3, 5))
@@ -286,11 +459,12 @@ def generate_panel_background(width, height):
     arr[:, :] = base
 
     yy, xx = np.ogrid[:height, :width]
-    asagi = (yy / max(height - 1, 1)) ** 1.6
+    asagi = (yy / max(height - 1, 1)) ** fade_power
     saga = np.clip((xx / max(width - 1, 1) - 0.15) / 0.85, 0, 1) ** 1.2
 
-    arr = _blend(arr, asagi * (0.30 + 0.70 * saga) * 0.30, primary)
-    arr = _blend(arr, asagi * np.clip(1 - xx / (width * 0.45), 0, 1) ** 1.5 * 0.12, success)
+    arr = _blend(arr, asagi * (0.30 + 0.70 * saga) * strength, primary)
+    arr = _blend(arr, asagi * np.clip(1 - xx / (width * 0.45), 0, 1) ** 1.5 * strength * 0.4,
+                  success)
     img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode='RGB')
 
     cols, rows = 8, 4
@@ -332,6 +506,15 @@ def fade_top_to_base(img, fade_ratio=0.55):
     t = np.clip(yy / max(height * fade_ratio, 1.0), 0.0, 1.0) ** 1.3
     arr = base * (1 - t) + arr * t
     return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode='RGB')
+
+
+def generate_window_background(width, height):
+    """Alt pencereler için, üst bölgesi daha uzun süre düz kalan dekor katmanı.
+
+    Bu pencerelerde widget'lar doğrudan pencereye yerleştiği için geçişin
+    yukarıda başlaması, widget'ların arka plandan kutu gibi ayrışmasına
+    yol açıyordu."""
+    return generate_panel_background(width, height, fade_power=3.4, strength=0.26)
 
 
 def get_panel_background():

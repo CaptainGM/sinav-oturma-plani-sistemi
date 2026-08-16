@@ -1,5 +1,6 @@
 pymongo
 pandas
+numpy
 openpyxl
 Pillow
 reportlab

@@ -10,6 +10,10 @@ Admin girişi sonrası ana panel — özet kartları, hızlı işlemler ve yakla
 
 ![Ana panel](ana-panel.png)
 
+Alt ekranlar da aynı temayı kullanır; yuvarlak köşeli butonlar ve boş kalmayan arka plan:
+
+![Bölüm seçme ekranı](alt-ekran.png)
+
 ## Mimari
 
 ```mermaid
@@ -24,6 +28,7 @@ flowchart LR
 
 - Rol tabanlı giriş (Admin / Bölüm Koordinatörü) ve kendi kendine kayıt olma
 - Pencere boyutuna uyum sağlayan görsel arka planlar (`assets/` klasörüne dosya koyarak değiştirilebilir)
+- Yuvarlak köşeli, hover/basılı durumu olan butonlar ve tüm pencerelerde ortak tema
 - Ana panelde özet istatistik kartları, hızlı işlem kısayolları ve yaklaşan sınav listesi
 - Bölüm, derslik ve ders yönetimi
 - Sınav programı oluşturma (öğrenci çakışmalarını otomatik olarak önlemeye çalışan yerleştirme algoritması)
@@ -72,14 +77,16 @@ Uygulama, tek bir dev dosya yerine sorumluluklarına göre ayrılmış bir paket
 ```
 main.py                        # Başlangıç noktası (python main.py)
 sinav_oturma_plani/
-    styles.py                  # Renk paleti, ttk stilleri, ikon üretimi, şifre hashleme
+    styles.py                  # Renk paleti, ttk stilleri, yuvarlak buton ve temalı
+                                # pencere widget'ları, ikon/arka plan üretimi, şifre hashleme
     database.py                # MongoDB bağlantısı, koleksiyon/index kurulumu, varsayılan admin
     cascades.py                 # Cascade delete/set-null yardımcıları (MongoDB'de FK yok)
     notifications.py           # SMTP e-posta gönderimi (sağlayıcıdan bağımsız)
     app.py                     # SinavTakvimiApp: tüm ekran mixin'lerini + arka plan görev
                                 # (threading/ilerleme çubuğu) yardımcısını birleştirir
     ui/
-        auth.py                 # Giriş, kullanıcı ekleme, bölüm seçimi
+        background.py            # Pencere boyutuyla ölçeklenen arka plan yardımcısı
+        auth.py                 # Giriş, kayıt, kullanıcı ekleme, bölüm seçimi
         dashboard.py             # Ana menü, özet istatistik kartları, aktivite kaydı ekranı
         instructors.py           # Öğretim görevlisi işlemleri
         classrooms.py            # Derslik işlemleri
