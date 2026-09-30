@@ -2,14 +2,15 @@
 import re
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from mysql.connector import Error
+from pymongo.errors import DuplicateKeyError, PyMongoError
 import pandas as pd
+
+from .. import cascades
 
 
 class CourseMixin:
     def download_course_template(self):
-        """upload_course_excel'in beklediği (SINIF başlığı + DERS KODU sütunlu)
-        formatta örnek bir Excel şablonu üretir."""
+        """Ders yükleme ekranının beklediği formatta örnek bir Excel dosyası üretir."""
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx")],
@@ -95,20 +96,17 @@ class CourseMixin:
                 return
 
             try:
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    INSERT INTO dersler (bolum_adi, ders_kodu, ders_adi, hoca_adi, sinif, ders_tipi)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (self.current_bolum, ders_kodu, ders_adı, hoca_adı, sinif, ders_tipi))
-                self.db.connection.commit()
-                cursor.close()
+                self.db.dersler.insert_one({
+                    'bolum_adi': self.current_bolum, 'ders_kodu': ders_kodu, 'ders_adi': ders_adı,
+                    'hoca_adi': hoca_adı, 'ogretim_gorevlisi_id': None,
+                    'sinif': sinif, 'ders_tipi': ders_tipi,
+                })
                 messagebox.showinfo("Başarılı", "Ders başarıyla eklendi!")
                 course_window.destroy()
-            except Error as e:
-                if "Duplicate entry" in str(e):
-                    messagebox.showerror("Hata", "Bu ders kodu zaten mevcut!")
-                else:
-                    messagebox.showerror("Hata", f"Ders eklenemedi: {e}")
+            except DuplicateKeyError:
+                messagebox.showerror("Hata", "Bu ders kodu zaten mevcut!")
+            except PyMongoError as e:
+                messagebox.showerror("Hata", f"Ders eklenemedi: {e}")
 
         tk.Button(course_window, text="Kaydet", font=("Arial", 12),
                   bg="#27ae60", fg="white", command=save_course).grid(
@@ -128,13 +126,9 @@ class CourseMixin:
         tk.Label(edit_window, text="Düzenlenecek Dersi Seçin:",
                  font=("Arial", 12, "bold")).pack(pady=10)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT id, ders_kodu, ders_adi, hoca_adi, sinif, ders_tipi
-            FROM dersler WHERE bolum_adi=%s
-        """, (self.current_bolum,))
-        dersler = cursor.fetchall()
-        cursor.close()
+        docs = list(self.db.dersler.find({'bolum_adi': self.current_bolum}))
+        dersler = [(d['_id'], d['ders_kodu'], d['ders_adi'], d.get('hoca_adi'),
+                    d.get('sinif'), d.get('ders_tipi')) for d in docs]
 
         if not dersler:
             messagebox.showinfo("Bilgi", "Henüz ders bulunmuyor!")
@@ -213,17 +207,15 @@ class CourseMixin:
                 return
 
             try:
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    UPDATE dersler
-                    SET ders_kodu=%s, ders_adi=%s, hoca_adi=%s, sinif=%s, ders_tipi=%s
-                    WHERE id=%s AND bolum_adi=%s
-                """, (ders_kodu, ders_adi, hoca_adi, sinif, ders_tipi, ders_id, self.current_bolum))
-                self.db.connection.commit()
-                cursor.close()
+                self.db.dersler.update_one(
+                    {'_id': ders_id, 'bolum_adi': self.current_bolum},
+                    {'$set': {'ders_kodu': ders_kodu, 'ders_adi': ders_adi, 'hoca_adi': hoca_adi,
+                              'sinif': sinif, 'ders_tipi': ders_tipi}})
                 messagebox.showinfo("Başarılı", "Ders güncellendi!")
                 edit_window.destroy()
-            except Error as e:
+            except DuplicateKeyError:
+                messagebox.showerror("Hata", "Bu ders kodu zaten mevcut!")
+            except PyMongoError as e:
                 messagebox.showerror("Hata", f"Ders güncellenemedi: {e}")
 
         def delete_course():
@@ -234,11 +226,7 @@ class CourseMixin:
 
             if messagebox.askyesno("Onay", f"{selected} dersi silinsin mi?"):
                 ders_id = ders_dict[selected][0]
-                cursor = self.db.connection.cursor()
-                cursor.execute("DELETE FROM dersler WHERE id=%s AND bolum_adi=%s",
-                               (ders_id, self.current_bolum))
-                self.db.connection.commit()
-                cursor.close()
+                cascades.delete_course(self.db, ders_id)
                 self.log_activity("Ders silindi", selected)
                 messagebox.showinfo("Başarılı", "Ders silindi!")
                 edit_window.destroy()
@@ -320,7 +308,6 @@ class CourseMixin:
         total_rows = len(df)
 
         def worker(progress_callback):
-            cursor = self.db.connection.cursor()
             success_count = 0
             error_list = []
             current_sinif = "1"
@@ -344,17 +331,15 @@ class CourseMixin:
 
                     ders_tipi = "Zorunlu"
 
-                    cursor.execute("""
-                        INSERT INTO dersler (bolum_adi, ders_kodu, ders_adi, hoca_adi, sinif, ders_tipi)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        ON DUPLICATE KEY UPDATE
-                            ders_adi=%s, hoca_adi=%s, sinif=%s, ders_tipi=%s
-                    """, (bolum_adi, ders_kodu, ders_adi, hoca_adi, current_sinif, ders_tipi,
-                          ders_adi, hoca_adi, current_sinif, ders_tipi))
+                    self.db.dersler.update_one(
+                        {'bolum_adi': bolum_adi, 'ders_kodu': ders_kodu},
+                        {'$set': {'ders_adi': ders_adi, 'hoca_adi': hoca_adi,
+                                  'sinif': current_sinif, 'ders_tipi': ders_tipi}},
+                        upsert=True)
 
                     success_count += 1
 
-                except Error as e:
+                except PyMongoError as e:
                     error_msg = f"Satır {index+2}: DB Hatası - {str(e)}"
                     error_list.append(error_msg)
                 except Exception as e:
@@ -362,9 +347,6 @@ class CourseMixin:
                     error_list.append(error_msg)
 
                 progress_callback(i + 1, total_rows, f"{i + 1}/{total_rows} satır işleniyor...")
-
-            self.db.connection.commit()
-            cursor.close()
 
             message = f"✅ {success_count} ders başarıyla yüklendi!"
             if error_list:
@@ -386,7 +368,7 @@ class CourseMixin:
         course_window.title("Ders Listesi")
         course_window.geometry("1100x600")
 
-        
+
         left_frame = tk.Frame(course_window)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -398,7 +380,7 @@ class CourseMixin:
         scrollbar = tk.Scrollbar(tree_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        
+
         columns = ("Ders Kodu", "Ders Adı", "Hoca", "Sınıf")
         course_tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
                                    yscrollcommand=scrollbar.set, selectmode='browse')
@@ -416,26 +398,21 @@ class CourseMixin:
 
         course_tree.pack(fill=tk.BOTH, expand=True)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT id, ders_kodu, ders_adi, hoca_adi, sinif FROM dersler
-            WHERE bolum_adi=%s ORDER BY sinif, ders_kodu
-        """, (self.current_bolum,))
-        courses = cursor.fetchall()
-        cursor.close()
+        courses = list(self.db.dersler.find({'bolum_adi': self.current_bolum}).sort(
+            [('sinif', 1), ('ders_kodu', 1)]))
 
         course_dict = {}
         for course in courses:
-            ders_id = course[0]
-            ders_kodu = course[1]
-            ders_adi = course[2]
-            hoca_adi = course[3] if course[3] else "Belirtilmemiş"
-            sinif = course[4]
+            ders_id = course['_id']
+            ders_kodu = course['ders_kodu']
+            ders_adi = course['ders_adi']
+            hoca_adi = course.get('hoca_adi') or "Belirtilmemiş"
+            sinif = course.get('sinif')
 
             item_id = course_tree.insert("", tk.END, values=(ders_kodu, ders_adi, hoca_adi, sinif))
             course_dict[item_id] = ders_id
 
-        
+
         right_frame = tk.Frame(course_window)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -466,22 +443,16 @@ class CourseMixin:
             item_id = selection[0]
             ders_id = course_dict[item_id]
 
-            
+
             for item in student_tree.get_children():
                 student_tree.delete(item)
 
-            cursor = self.db.connection.cursor()
-            cursor.execute("""
-                SELECT o.ogrenci_no, o.ad_soyad, o.sinif
-                FROM ogrenciler o
-                JOIN ogrenci_ders od ON o.id = od.ogrenci_id
-                WHERE od.ders_id=%s
-                ORDER BY o.ogrenci_no
-            """, (ders_id,))
+            ogrenci_ids = [od['ogrenci_id'] for od in self.db.ogrenci_ders.find(
+                {'ders_id': ders_id}, {'ogrenci_id': 1})]
+            ogrenciler = self.db.ogrenciler.find(
+                {'_id': {'$in': ogrenci_ids}}).sort('ogrenci_no', 1)
 
-            for student in cursor.fetchall():
-                student_tree.insert("", tk.END, values=student)
-            cursor.close()
+            for o in ogrenciler:
+                student_tree.insert("", tk.END, values=(o['ogrenci_no'], o['ad_soyad'], o.get('sinif')))
 
         course_tree.bind('<<TreeviewSelect>>', on_course_select)
-

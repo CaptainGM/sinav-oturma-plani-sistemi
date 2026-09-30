@@ -1,6 +1,5 @@
-"""E-posta bildirimi altyapısı. Herhangi bir SMTP sunucusuyla (Gmail uygulama
-şifresi, okul mail sunucusu, Outlook vb.) çalışacak şekilde ortam
-değişkenleriyle yapılandırılır; hiçbir sağlayıcıya özel bağımlılık yoktur.
+"""E-posta gönderimi. Gmail, okul mail sunucusu gibi herhangi bir SMTP
+sunucusuyla çalışır.
 
 Ortam değişkenleri:
     SMTP_HOST      - örn. smtp.gmail.com (zorunlu)
@@ -21,9 +20,9 @@ def smtp_configured():
 
 
 def send_email(to_addr, subject, body):
-    """Tek bir e-posta gönderir. SMTP yapılandırılmamışsa veya gönderim
-    başarısız olursa RuntimeError fırlatır; çağıran taraf bunu yakalayıp
-    kullanıcıya uygun bir hata/özet göstermelidir."""
+    """Tek bir e-posta gönderir.
+
+    Ayarlar eksikse ya da gönderim başarısız olursa hata fırlatır."""
     if not smtp_configured():
         raise RuntimeError(
             "SMTP ayarları yapılandırılmamış (SMTP_HOST/SMTP_USER/SMTP_PASSWORD "

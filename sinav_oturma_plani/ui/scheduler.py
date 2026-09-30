@@ -3,7 +3,7 @@ Excel'e aktarım ve çakışma raporu."""
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 import pandas as pd
 
 
@@ -17,7 +17,7 @@ class SchedulerMixin:
         scheduler_window.title("Sınav Programı Oluştur")
         scheduler_window.geometry("900x800")
 
-        
+
         main_canvas = tk.Canvas(scheduler_window)
         scrollbar = tk.Scrollbar(scheduler_window, orient="vertical", command=main_canvas.yview)
         scrollable_frame = tk.Frame(main_canvas)
@@ -36,20 +36,16 @@ class SchedulerMixin:
         tk.Label(scrollable_frame, text="Sınav Programı Kısıtları",
                  font=("Arial", 16, "bold")).pack(pady=10)
 
-       
+
         ders_frame = tk.LabelFrame(scrollable_frame, text="1. Ders Seçimi", font=("Arial", 12, "bold"), padx=20, pady=10)
         ders_frame.pack(fill=tk.BOTH, padx=20, pady=10)
 
         tk.Label(ders_frame, text="Sınav programına dahil edilecek dersleri seçin:",
                  font=("Arial", 10)).pack(anchor="w", pady=5)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT id, ders_kodu, ders_adi, sinif FROM dersler
-            WHERE bolum_adi=%s ORDER BY sinif, ders_kodu
-        """, (self.current_bolum,))
-        dersler = cursor.fetchall()
-        cursor.close()
+        dersler = [(d['_id'], d['ders_kodu'], d['ders_adi'], d['sinif'])
+                   for d in self.db.dersler.find({'bolum_adi': self.current_bolum})
+                   .sort([('sinif', 1), ('ders_kodu', 1)])]
 
         ders_checkboxes = {}
         ders_listbox_frame = tk.Frame(ders_frame)
@@ -76,7 +72,7 @@ class SchedulerMixin:
         ders_check_frame.update_idletasks()
         ders_canvas.config(scrollregion=ders_canvas.bbox("all"))
 
-       
+
         tur_frame = tk.LabelFrame(scrollable_frame, text="2. Sınav Türü", font=("Arial", 12, "bold"), padx=20, pady=10)
         tur_frame.pack(fill=tk.X, padx=20, pady=10)
 
@@ -87,7 +83,7 @@ class SchedulerMixin:
             tk.Radiobutton(sinav_turu_row, text=tur, variable=sinav_turu_var,
                            value=tur, font=("Arial", 10)).pack(side=tk.LEFT, padx=10)
 
-        
+
         tarih_frame = tk.LabelFrame(scrollable_frame, text="3. Tarih Aralığı", font=("Arial", 12, "bold"), padx=20, pady=10)
         tarih_frame.pack(fill=tk.X, padx=20, pady=10)
 
@@ -101,7 +97,7 @@ class SchedulerMixin:
         bitis_entry = tk.Entry(tarih_frame, font=("Arial", 10), width=30)
         bitis_entry.pack(anchor="w", pady=2)
 
-       
+
         gun_frame = tk.LabelFrame(scrollable_frame, text="4. Sınav Yapılmayacak Günler", font=("Arial", 12, "bold"), padx=20, pady=10)
         gun_frame.pack(fill=tk.X, padx=20, pady=10)
 
@@ -116,7 +112,7 @@ class SchedulerMixin:
                            font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
             gun_vars[gun] = var
 
-        
+
         sure_frame = tk.LabelFrame(scrollable_frame, text="5. Sınav Süreleri", font=("Arial", 12, "bold"), padx=20, pady=10)
         sure_frame.pack(fill=tk.X, padx=20, pady=10)
 
@@ -126,7 +122,7 @@ class SchedulerMixin:
         sure_entry.insert(0, "75")
         sure_entry.pack(anchor="w", pady=2)
 
-        
+
         tk.Label(sure_frame, text="İstisnai Sınav Süreleri:",
                  font=("Arial", 10, "bold")).pack(anchor="w", pady=(10,2))
 
@@ -199,7 +195,7 @@ class SchedulerMixin:
         tk.Button(btn_frame, text="Seçiliyi Sil", font=("Arial", 9),
                   bg="#e74c3c", fg="white", command=delete_istisnai_sure).pack(side=tk.LEFT, padx=5)
 
-        
+
         bekleme_frame = tk.LabelFrame(scrollable_frame, text="6. Bekleme Süresi", font=("Arial", 12, "bold"), padx=20, pady=10)
         bekleme_frame.pack(fill=tk.X, padx=20, pady=10)
 
@@ -209,7 +205,7 @@ class SchedulerMixin:
         bekleme_entry.insert(0, "15")
         bekleme_entry.pack(anchor="w", pady=2)
 
-        
+
         ayni_zaman_frame = tk.LabelFrame(scrollable_frame, text="7. Çakışma Kuralı", font=("Arial", 12, "bold"), padx=20, pady=10)
         ayni_zaman_frame.pack(fill=tk.X, padx=20, pady=10)
 
@@ -217,10 +213,10 @@ class SchedulerMixin:
         tk.Checkbutton(ayni_zaman_frame, text="Hiçbir sınav aynı zamana denk gelmesin (Bir sınav bitene kadar başka sınav başlamasın)",
                        variable=ayni_zaman_var, font=("Arial", 10)).pack(anchor="w", pady=5)
 
-        
+
         def create_schedule():
             try:
-                
+
                 secili_dersler = [ders_id for ders_id, var in ders_checkboxes.items() if var.get()]
 
                 if not secili_dersler:
@@ -241,10 +237,10 @@ class SchedulerMixin:
                 sinav_turu = sinav_turu_var.get()
                 ayni_zaman = ayni_zaman_var.get()
 
-                
+
                 calisilan_gunler = [i for i, gun in enumerate(gunler) if not gun_vars[gun].get()]
 
-                
+
                 tarihler = []
                 current = baslangic
                 while current <= bitis:
@@ -256,49 +252,41 @@ class SchedulerMixin:
                     messagebox.showerror("Hata", "Seçilen tarih aralığında uygun gün yok!")
                     return
 
-                
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    SELECT id, derslik_adi, kapasite FROM derslikler
-                    WHERE bolum_adi=%s ORDER BY kapasite DESC
-                """, (self.current_bolum,))
-                derslikler = cursor.fetchall()
+
+                derslikler = [(d['_id'], d['derslik_adi'], d['kapasite'])
+                              for d in self.db.derslikler.find({'bolum_adi': self.current_bolum})
+                              .sort('kapasite', -1)]
 
                 if not derslikler:
                     messagebox.showerror("Hata", "Sistemde derslik bulunamadı!")
-                    cursor.close()
                     return
 
-               
-                cursor.execute("DELETE FROM istisnai_sinav_sureleri WHERE bolum_adi=%s", (self.current_bolum,))
-                for ders_id, sure in istisnai_sureler.items():
-                    cursor.execute("""
-                        INSERT INTO istisnai_sinav_sureleri (bolum_adi, ders_id, sinav_suresi)
-                        VALUES (%s, %s, %s)
-                    """, (self.current_bolum, ders_id, sure))
 
-                
-                cursor.execute("DELETE FROM sinav_programi WHERE bolum_adi=%s", (self.current_bolum,))
-                self.db.connection.commit()
+                self.db.istisnai_sinav_sureleri.delete_many({'bolum_adi': self.current_bolum})
+                if istisnai_sureler:
+                    self.db.istisnai_sinav_sureleri.insert_many([
+                        {'bolum_adi': self.current_bolum, 'ders_id': ders_id, 'sinav_suresi': sure}
+                        for ders_id, sure in istisnai_sureler.items()
+                    ])
 
-                
+
                 result = self.optimized_exam_scheduler(
                     secili_dersler, tarihler, derslikler,
                     sinav_suresi_default, istisnai_sureler,
-                    bekleme_suresi, sinav_turu, ayni_zaman, cursor
+                    bekleme_suresi, sinav_turu, ayni_zaman
                 )
 
-                cursor.close()
-
                 if result['success']:
-                    self.db.connection.commit()
+
+                    self.db.sinav_programi.delete_many({'bolum_adi': self.current_bolum})
+                    if result['records']:
+                        self.db.sinav_programi.insert_many(result['records'])
                     self.log_activity("Sınav programı oluşturuldu",
                                        f"{sinav_turu}, {len(secili_dersler)} ders, "
                                        f"{baslangic_str}-{bitis_str}")
                     messagebox.showinfo("Başarılı", result['message'])
                     self.export_schedule_to_excel()
                 else:
-                    self.db.connection.rollback()
                     messagebox.showerror("Hata", result['message'])
 
             except ValueError as e:
@@ -314,199 +302,186 @@ class SchedulerMixin:
 
     def optimized_exam_scheduler(self, secili_dersler, tarihler, derslikler,
                                  sinav_suresi_default, istisnai_sureler,
-                                 bekleme_suresi, sinav_turu, ayni_zaman, cursor):
+                                 bekleme_suresi, sinav_turu, ayni_zaman):
 
-        
-        cursor.execute(f"""
-            SELECT id, ders_kodu, ders_adi, sinif
-            FROM dersler
-            WHERE id IN ({','.join(['%s']*len(secili_dersler))})
-            ORDER BY sinif, ders_kodu
-        """, secili_dersler)
-        tum_dersler = cursor.fetchall()
 
-        
-        ders_ogrenci_sayilari = {}
-        for ders in tum_dersler:
-            cursor.execute("""
-                SELECT COUNT(*) FROM ogrenci_ders WHERE ders_id=%s
-            """, (ders[0],))
-            ders_ogrenci_sayilari[ders[0]] = cursor.fetchone()[0]
+        ders_docs = list(self.db.dersler.find({'_id': {'$in': secili_dersler}})
+                          .sort([('sinif', 1), ('ders_kodu', 1)]))
+        tum_dersler = [(d['_id'], d['ders_kodu'], d['ders_adi'], d['sinif']) for d in ders_docs]
 
-        
-        cursor.execute("""
-            SELECT od.ogrenci_id, od.ders_id
-            FROM ogrenci_ders od
-            JOIN dersler d ON od.ders_id = d.id
-            WHERE d.bolum_adi=%s AND d.id IN ({})
-        """.format(','.join(['%s']*len(secili_dersler))),
-        [self.current_bolum] + secili_dersler)
+
+        enrollment_docs = list(self.db.ogrenci_ders.find(
+            {'ders_id': {'$in': secili_dersler}}, {'ders_id': 1, 'ogrenci_id': 1}))
+        ders_ogrenci_sayilari = Counter(e['ders_id'] for e in enrollment_docs)
+
+
+        bolum_ders_ids = {d['_id'] for d in self.db.dersler.find(
+            {'_id': {'$in': secili_dersler}, 'bolum_adi': self.current_bolum}, {'_id': 1})}
 
         ogrenci_dersler = defaultdict(set)
-        for og_id, ders_id in cursor.fetchall():
-            ogrenci_dersler[og_id].add(ders_id)
+        for e in enrollment_docs:
+            if e['ders_id'] in bolum_ders_ids:
+                ogrenci_dersler[e['ogrenci_id']].add(e['ders_id'])
 
-        
+
         sinif_dersleri = defaultdict(list)
         for ders in tum_dersler:
-            sinif_dersleri[ders[3]].append(ders)  
+            sinif_dersleri[ders[3]].append(ders)
 
-     
+
         sinif_gun_planlari = {}
 
         for sinif, dersler in sinif_dersleri.items():
             ders_sayisi = len(dersler)
             gun_sayisi = len(tarihler)
-            
+
             if gun_sayisi == 0:
                 continue
-            
-           
-            gun_basi_ders = ders_sayisi // gun_sayisi  
-            kalan_ders = ders_sayisi % gun_sayisi      
-            
-           
+
+
+            gun_basi_ders = ders_sayisi // gun_sayisi
+            kalan_ders = ders_sayisi % gun_sayisi
+
+
             gun_ders_sayilari = []
             for gun_idx in range(gun_sayisi):
                 if gun_idx < kalan_ders:
-                   
+
                     gun_ders_sayilari.append(gun_basi_ders + 1)
                 else:
                     gun_ders_sayilari.append(gun_basi_ders)
-            
-           
+
+
             gun_plani = []
             ders_index = 0
-            
+
             for gun_idx in range(gun_sayisi):
                 ders_adedi = gun_ders_sayilari[gun_idx]
-                
+
                 if ders_adedi > 0 and ders_index < ders_sayisi:
                     gun_dersleri = dersler[ders_index:ders_index + ders_adedi]
                     gun_plani.append((tarihler[gun_idx], gun_dersleri))
                     ders_index += ders_adedi
-            
+
             sinif_gun_planlari[sinif] = gun_plani
 
-     
+
         derslik_takvimi = defaultdict(lambda: defaultdict(list))
-       
+
         global_sinav_takvimi = defaultdict(list)
-        
+
         ogrenci_sinav_takvimi = defaultdict(list)
 
         sinav_programi = []
         hata_mesajlari = []
 
-       
+
         for sinif, gun_plani in sinif_gun_planlari.items():
             for tarih, gun_dersleri in gun_plani:
-                
-                
+
+
                 gun_dersleri_sorted = sorted(gun_dersleri,
                                              key=lambda d: ders_ogrenci_sayilari[d[0]],
                                              reverse=True)
-                
+
                 for ders in gun_dersleri_sorted:
                     ders_id = ders[0]
-                    ders_kodu = ders[1]
-                    ders_adi = ders[2]
                     ogrenci_sayisi = ders_ogrenci_sayilari[ders_id]
                     sinav_suresi = istisnai_sureler.get(ders_id, sinav_suresi_default)
-                    
+
                     yerlestirildi = False
-                    
-                    
+
+
                     current_time = datetime.combine(tarih, datetime.min.time().replace(hour=9, minute=0))
                     gun_bitis = datetime.combine(tarih, datetime.min.time().replace(hour=18, minute=0))
-                    
+
                     while current_time < gun_bitis and not yerlestirildi:
                         sinav_baslangic = current_time
                         sinav_bitis = sinav_baslangic + timedelta(minutes=sinav_suresi)
                         mola_bitis = sinav_bitis + timedelta(minutes=bekleme_suresi)
 
-                        
+
                         cakisma_var = False
                         if ayni_zaman:
                             for (baslangic_global, global_mola_bitis) in global_sinav_takvimi[tarih]:
-                                
+
                                 if sinav_baslangic < global_mola_bitis:
                                     cakisma_var = True
                                     break
-                            
+
                             if cakisma_var:
                                 current_time += timedelta(minutes=15)
                                 continue
 
-                        
+
                         musait_derslikler = []
-                        
+
                         for derslik in derslikler:
                             derslik_id = derslik[0]
                             derslik_musait = True
-                            
-                            
+
+
                             for (onceki_baslangic, onceki_bitis, onceki_mola_bitis, _) in derslik_takvimi[tarih][derslik_id]:
                                 if sinav_baslangic < onceki_mola_bitis:
                                     derslik_musait = False
                                     break
-                            
+
                             if derslik_musait:
                                 musait_derslikler.append(derslik)
-                        
-                        
+
+
                         gerekli_derslikler = []
                         kalan_ogrenci = ogrenci_sayisi
-                        
-                        
+
+
                         musait_derslikler_sorted = sorted(musait_derslikler,
                                                          key=lambda d: len(derslik_takvimi[tarih][d[0]]),
                                                          reverse=True)
-                        
+
                         for derslik in musait_derslikler_sorted:
                             if kalan_ogrenci <= 0:
                                 break
                             gerekli_derslikler.append(derslik)
                             kalan_ogrenci -= derslik[2]
-                        
+
                         if kalan_ogrenci > 0:
                             current_time += timedelta(minutes=15)
                             continue
 
-                        
+
 
                         bekleme_ihlali = False
-                        
-                        
+
+
                         for og_id, ders_set in ogrenci_dersler.items():
                             if ders_id in ders_set:
-                                
-                                
+
+
                                 for (onceki_sinav_bitis, onceki_ders_id) in ogrenci_sinav_takvimi[og_id]:
                                     if onceki_sinav_bitis.date() == tarih.date():
-                                        
-                                        
+
+
                                         sure_farki = (sinav_baslangic - onceki_sinav_bitis).total_seconds() / 60
                                         if sure_farki < bekleme_suresi:
                                             bekleme_ihlali = True
                                             break
-                                        
+
                                 if bekleme_ihlali:
                                     break
 
-                       
+
                         if not bekleme_ihlali:
-                         
+
                             cakisan_dersler = []
                             gerekli_derslik_ids = {d[0] for d in gerekli_derslikler}
                             for derslik in derslikler:
                                 derslik_id = derslik[0]
                                 if derslik_id in gerekli_derslik_ids: continue
                                 for (baslangic_diger, bitis_diger, mola_bitis_diger, diger_ders_id) in derslik_takvimi[tarih][derslik_id]:
-                                    
+
                                     if not (sinav_bitis <= baslangic_diger or sinav_baslangic >= bitis_diger):
                                         cakisan_dersler.append(diger_ders_id)
-                            
+
                             if cakisan_dersler:
                                 for og_id, ders_set in ogrenci_dersler.items():
                                     if ders_id in ders_set and ders_set.intersection(set(cakisan_dersler)):
@@ -517,60 +492,57 @@ class SchedulerMixin:
                         if bekleme_ihlali:
                             current_time += timedelta(minutes=15)
                             continue
-                        
-                       
-                        
-                       
+
+
+
+
                         if ayni_zaman:
                             global_sinav_takvimi[tarih].append((sinav_baslangic, mola_bitis))
-                        
-                        
+
+
                         for og_id in ogrenci_dersler:
                             if ders_id in ogrenci_dersler[og_id]:
-                                
+
                                 ogrenci_sinav_takvimi[og_id].append((sinav_bitis, ders_id))
 
-                       
+
                         for derslik in gerekli_derslikler:
                             derslik_id = derslik[0]
-                            
+
                             derslik_takvimi[tarih][derslik_id].append(
                                 (sinav_baslangic, sinav_bitis, mola_bitis, ders_id)
                             )
-                            
+
                             sinav_programi.append({
+                                'bolum_adi': self.current_bolum,
                                 'ders_id': ders_id,
-                                'tarih': tarih,
-                                'saat': sinav_baslangic.time().strftime('%H:%M:%S'),
-                                'derslik_id': derslik_id
+                                'sinav_tarihi': tarih,
+                                'sinav_saati': sinav_baslangic.time().strftime('%H:%M:%S'),
+                                'sinav_turu': sinav_turu,
+                                'sinav_suresi': sinav_suresi,
+                                'derslik_id': derslik_id,
                             })
-                            
-                            cursor.execute("""
-                                INSERT INTO sinav_programi
-                                (bolum_adi, ders_id, sinav_tarihi, sinav_saati, sinav_turu, sinav_suresi, derslik_id, atanan_ogrenci)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (self.current_bolum, ders_id, tarih,
-                                  sinav_baslangic.time().strftime('%H:%M:%S'),
-                                  sinav_turu, sinav_suresi, derslik_id, derslik[2]))
-                            
+
                         yerlestirildi = True
-                        break 
+                        break
 
                     if not yerlestirildi:
                         hata_mesajlari.append(
                             f"❌ {ders[1]} - {ders[2]} ({ders[3]}. sınıf) {tarih.strftime('%d.%m.%Y')} gününe yerleştirilemedi! (Kapasite/Zaman Dolu)"
                         )
 
-        
+
         if hata_mesajlari:
             return {
                 'success': len(sinav_programi) > 0,
-                'message': f"{len(sinav_programi)} sınav oluşturuldu.\n\n⚠️ HATALAR:\n" + "\n".join(hata_mesajlari[:5])
+                'message': f"{len(sinav_programi)} sınav oluşturuldu.\n\n⚠️ HATALAR:\n" + "\n".join(hata_mesajlari[:5]),
+                'records': sinav_programi,
             }
         else:
             return {
                 'success': True,
-                'message': f"✅ Başarılı!\n{len(sinav_programi)} sınav kaydı oluşturuldu."
+                'message': f"✅ Başarılı!\n{len(sinav_programi)} sınav kaydı oluşturuldu.",
+                'records': sinav_programi,
             }
 
 
@@ -578,47 +550,43 @@ class SchedulerMixin:
         if not self.current_bolum:
             return
 
-        cursor = self.db.connection.cursor()
+        sp_docs = list(self.db.sinav_programi.find({'bolum_adi': self.current_bolum}))
 
-       
-        cursor.execute("""
-            SELECT
-                sp.sinav_tarihi,
-                sp.sinav_saati,
-                d.ders_adi,
-                d.hoca_adi,      -- Öğretim Elemanı
-                dr.derslik_adi,  -- Derslik Adı
-                sp.sinav_turu,
-                sp.sinav_suresi,
-                sp.ders_id
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            WHERE sp.bolum_adi=%s
-            ORDER BY sp.sinav_tarihi, sp.sinav_saati, d.ders_adi
-        """, (self.current_bolum,))
+        if not sp_docs:
+            messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
+            return
 
-        results = cursor.fetchall()
+        ders_ids = list({sp['ders_id'] for sp in sp_docs})
+        derslik_ids = list({sp['derslik_id'] for sp in sp_docs if sp.get('derslik_id') is not None})
+
+        ders_map = {d['_id']: d for d in self.db.dersler.find({'_id': {'$in': ders_ids}})}
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+
+        results = []
+        for sp in sp_docs:
+            ders = ders_map.get(sp['ders_id'])
+            derslik = derslik_map.get(sp.get('derslik_id'))
+            if not ders or not derslik:
+                continue
+            results.append((sp['sinav_tarihi'], sp['sinav_saati'], ders['ders_adi'],
+                             ders.get('hoca_adi'), derslik['derslik_adi'], sp['sinav_turu'],
+                             sp['sinav_suresi'], sp['ders_id']))
+
+        results.sort(key=lambda r: (r[0], r[1], r[2]))
 
         if not results:
             messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
-            cursor.close()
             return
 
-        
-        ders_id_to_ogrenci_sayilari = {}
-        ders_ids = list(set(r[7] for r in results))
 
-        
-        if ders_ids:
-            cursor.execute(f"""
-                SELECT ders_id, COUNT(*)
-                FROM ogrenci_ders
-                WHERE ders_id IN ({','.join(['%s']*len(ders_ids))})
-                GROUP BY ders_id
-            """, ders_ids)
-            for ders_id, count in cursor.fetchall():
-                ders_id_to_ogrenci_sayilari[ders_id] = count
+        ders_id_to_ogrenci_sayilari = {}
+        ders_ids2 = list({r[7] for r in results})
+
+
+        if ders_ids2:
+            enroll_docs = list(self.db.ogrenci_ders.find(
+                {'ders_id': {'$in': ders_ids2}}, {'ders_id': 1}))
+            ders_id_to_ogrenci_sayilari = dict(Counter(e['ders_id'] for e in enroll_docs))
 
         grouped_schedule = defaultdict(lambda: {
             'Derslikler': [],
@@ -632,18 +600,18 @@ class SchedulerMixin:
 
             key = (tarih, saat, ders_adi)
 
-          
+
             grouped_schedule[key]['Derslikler'].append(derslik_adi)
 
-           
+
             grouped_schedule[key]['Öğretim Elemanı'] = hoca_adi
             grouped_schedule[key]['Sınav Türü'] = sinav_turu
             grouped_schedule[key]['Sınav Süresi'] = sinav_suresi
 
-            
+
             grouped_schedule[key]['Öğrenci Sayısı'] = ders_id_to_ogrenci_sayilari.get(ders_id, 0)
 
-        
+
 
         final_list = []
 
@@ -653,7 +621,7 @@ class SchedulerMixin:
                 'Sınav Saati': str(saat),
                 'Ders Adı': ders_adi,
                 'Öğretim Elemanı': data['Öğretim Elemanı'],
-                'Derslik': '-'.join(sorted(set(data['Derslikler']))), 
+                'Derslik': '-'.join(sorted(set(data['Derslikler']))),
                 'Öğrenci Sayısı': data['Öğrenci Sayısı'],
                 'Sınav Türü': data['Sınav Türü'],
                 'Süre (dk)': data['Sınav Süresi']
@@ -661,10 +629,10 @@ class SchedulerMixin:
 
         df = pd.DataFrame(final_list)
 
-        
+
         df_output = df[['Tarih', 'Sınav Saati', 'Ders Adı', 'Öğretim Elemanı', 'Derslik', 'Öğrenci Sayısı', 'Sınav Türü', 'Süre (dk)']]
 
-        
+
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx")],
@@ -677,47 +645,50 @@ class SchedulerMixin:
 
 
     def show_exam_conflicts(self):
-        """Kayıtlı sınav programında öğrenci bazında çakışma/yetersiz ara denetimi yapar.
-
-        Otomatik program oluşturma (optimized_exam_scheduler) çakışmaları zaten
-        yerleştirme sırasında engellemeye çalışır; bu ekran, oluşturulmuş programı
-        bağımsız olarak denetleyen salt-okunur bir kontrol raporudur."""
+        """Aynı öğrencinin üst üste binen sınavı var mı diye kontrol eder."""
         if not self.current_bolum:
             messagebox.showerror("Hata", "Önce bir bölüm seçin!")
             return
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT sp.id, sp.sinav_tarihi, sp.sinav_saati, sp.sinav_suresi,
-                   d.ders_kodu, d.ders_adi, od.ogrenci_id, o.ad_soyad, o.ogrenci_no
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            JOIN ogrenci_ders od ON od.ders_id = d.id
-            JOIN ogrenciler o ON o.id = od.ogrenci_id
-            WHERE sp.bolum_adi=%s
-            ORDER BY o.ogrenci_no, sp.sinav_tarihi, sp.sinav_saati
-        """, (self.current_bolum,))
-        rows = cursor.fetchall()
-        cursor.close()
+        sp_docs = list(self.db.sinav_programi.find({'bolum_adi': self.current_bolum}))
 
-        if not rows:
+        if not sp_docs:
             messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
             return
 
+        ders_ids = list({sp['ders_id'] for sp in sp_docs})
+        ders_map = {d['_id']: d for d in self.db.dersler.find({'_id': {'$in': ders_ids}})}
+
+        enrollment_docs = list(self.db.ogrenci_ders.find({'ders_id': {'$in': ders_ids}}))
+        ders_to_ogrenciler = defaultdict(list)
+        for e in enrollment_docs:
+            ders_to_ogrenciler[e['ders_id']].append(e['ogrenci_id'])
+
+        ogrenci_ids = list({e['ogrenci_id'] for e in enrollment_docs})
+        ogrenci_map = {o['_id']: o for o in self.db.ogrenciler.find({'_id': {'$in': ogrenci_ids}})}
+
         ogrenci_sinavlari = defaultdict(list)
-        for (sinav_id, tarih, saat, sure, ders_kodu, ders_adi,
-             ogrenci_id, ad_soyad, ogrenci_no) in rows:
-            # mysql-connector TIME kolonlarını datetime.timedelta olarak döndürür
-            baslangic = datetime.combine(tarih, datetime.min.time()) + saat
-            bitis = baslangic + timedelta(minutes=sure or 0)
-            ogrenci_sinavlari[ogrenci_id].append({
-                'ad_soyad': ad_soyad, 'ogrenci_no': ogrenci_no,
-                'ders': f"{ders_kodu} - {ders_adi}",
-                'baslangic': baslangic, 'bitis': bitis
-            })
+        for sp in sp_docs:
+            ders = ders_map.get(sp['ders_id'])
+            if not ders:
+                continue
+            # Saat "HH:MM:SS" metni olarak saklanıyor.
+            saat_time = datetime.strptime(sp['sinav_saati'], '%H:%M:%S').time()
+            baslangic = datetime.combine(sp['sinav_tarihi'].date(), saat_time)
+            bitis = baslangic + timedelta(minutes=sp.get('sinav_suresi') or 0)
+            for ogrenci_id in ders_to_ogrenciler.get(sp['ders_id'], []):
+                ogrenci = ogrenci_map.get(ogrenci_id)
+                if not ogrenci:
+                    continue
+                ogrenci_sinavlari[ogrenci_id].append({
+                    'ad_soyad': ogrenci['ad_soyad'], 'ogrenci_no': ogrenci['ogrenci_no'],
+                    'ders': f"{ders['ders_kodu']} - {ders['ders_adi']}",
+                    'baslangic': baslangic, 'bitis': bitis
+                })
 
         cakismalar = []
-        for ogrenci_id, sinavlar in ogrenci_sinavlari.items():
+        for ogrenci_id in sorted(ogrenci_sinavlari, key=lambda oid: ogrenci_map[oid]['ogrenci_no']):
+            sinavlar = ogrenci_sinavlari[ogrenci_id]
             sinavlar_sorted = sorted(sinavlar, key=lambda s: s['baslangic'])
             for i in range(len(sinavlar_sorted) - 1):
                 a = sinavlar_sorted[i]
@@ -764,24 +735,31 @@ class SchedulerMixin:
             ))
 
     def show_exam_calendar(self):
-        """Tüm sınav programını derslik x zaman ızgarası olarak gösterir;
-        hangi derslikte hangi dersin ne zaman olduğunu tek bakışta görüp
-        boşlukları/çakışmaları fark etmeyi kolaylaştırır."""
+        """Tüm sınav programını derslik x zaman ızgarası olarak gösterir."""
         if not self.current_bolum:
             messagebox.showerror("Hata", "Önce bir bölüm seçin!")
             return
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT sp.sinav_tarihi, sp.sinav_saati, dr.derslik_adi, d.ders_kodu
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            WHERE sp.bolum_adi=%s
-            ORDER BY sp.sinav_tarihi, sp.sinav_saati, dr.derslik_adi
-        """, (self.current_bolum,))
-        rows = cursor.fetchall()
-        cursor.close()
+        sp_docs = list(self.db.sinav_programi.find({'bolum_adi': self.current_bolum}))
+
+        if not sp_docs:
+            messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
+            return
+
+        ders_ids = list({sp['ders_id'] for sp in sp_docs})
+        derslik_ids = list({sp['derslik_id'] for sp in sp_docs if sp.get('derslik_id') is not None})
+        ders_map = {d['_id']: d for d in self.db.dersler.find({'_id': {'$in': ders_ids}})}
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+
+        rows = []
+        for sp in sp_docs:
+            ders = ders_map.get(sp['ders_id'])
+            derslik = derslik_map.get(sp.get('derslik_id'))
+            if not ders or not derslik:
+                continue
+            rows.append((sp['sinav_tarihi'], sp['sinav_saati'], derslik['derslik_adi'], ders['ders_kodu']))
+
+        rows.sort(key=lambda r: (r[0], r[1], r[2]))
 
         if not rows:
             messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
@@ -822,4 +800,3 @@ class SchedulerMixin:
             for derslik_adi in derslikler_sorted:
                 row_values.append(hucre.get((tarih, saat, derslik_adi), ""))
             tree.insert("", tk.END, values=row_values)
-

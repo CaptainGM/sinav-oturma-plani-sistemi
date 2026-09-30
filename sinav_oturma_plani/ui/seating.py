@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 from collections import defaultdict
+import random
 import pandas as pd
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas as pdf_canvas
@@ -14,24 +15,18 @@ from ..notifications import smtp_configured, send_email
 from ..styles import COLORS
 
 try:
-   
+
     pdfmetrics.registerFont(TTFont('Arial', 'Arial.ttf'))
-    pdfmetrics.registerFont(TTFont('Arial-Bold', 'arialbd.ttf')) 
+    pdfmetrics.registerFont(TTFont('Arial-Bold', 'arialbd.ttf'))
 except Exception as e:
 
     print(f"Uyarı: Arial font dosyaları bulunamadı! Varsayılan font kullanılacak. Hata: {e}")
 
 
 def is_seat_empty(koltuk_no, sira_yapi):
-    """Anti-kopya (aralıklı) oturma düzeni: bir kutudaki koltuklardan çift
-    sıradakiler (2, 4, 6, ...) her zaman boş bırakılır, tek sıradakiler
-    (1, 3, 5, ...) doldurulur; sira_yapi<=1 için hiçbir koltuk boş kalmaz.
+    """Anti-kopya düzeni: çift numaralı koltuklar boş bırakılır.
 
-    Önceden bu kural sadece 2'li ve 3'lü sıra yapılarına özel olarak
-    (sira_yapi == 2 or 3) hardcode edilmişti — bu da farklı derslik
-    düzenlerine (4'lü, 5'li sıralar vb.) sahip üniversiteler için uygulamayı
-    kullanılamaz kılıyordu. Bu genelleme, N=2 ve N=3 için önceki davranışla
-    birebir aynı sonucu üretirken herhangi bir sira_yapisi değeriyle çalışır."""
+    Sıra yapısı 1 ise hiçbir koltuk boşaltılmaz."""
     if sira_yapi <= 1:
         return False
     return koltuk_no % 2 == 0
@@ -60,24 +55,22 @@ class SeatingMixin:
         scrollbar.config(command=exam_listbox.yview)
         exam_listbox.pack(fill=tk.BOTH, expand=True)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT
-                sp.id,
-                d.ders_kodu,
-                d.ders_adi,
-                sp.sinav_tarihi,
-                sp.sinav_saati,
-                dr.derslik_adi
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            WHERE sp.bolum_adi=%s
-            ORDER BY sp.sinav_tarihi, sp.sinav_saati
-        """, (self.current_bolum,))
+        sp_docs = list(self.db.sinav_programi.find({'bolum_adi': self.current_bolum})
+                       .sort([('sinav_tarihi', 1), ('sinav_saati', 1)]))
 
-        sinavlar = cursor.fetchall()
-        cursor.close()
+        ders_ids = list({sp['ders_id'] for sp in sp_docs})
+        derslik_ids = list({sp['derslik_id'] for sp in sp_docs if sp.get('derslik_id') is not None})
+        ders_map = {d['_id']: d for d in self.db.dersler.find({'_id': {'$in': ders_ids}})}
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+
+        sinavlar = []
+        for sp in sp_docs:
+            ders = ders_map.get(sp['ders_id'])
+            derslik = derslik_map.get(sp.get('derslik_id'))
+            if not ders or not derslik:
+                continue
+            sinavlar.append((sp['_id'], ders['ders_kodu'], ders['ders_adi'],
+                              sp['sinav_tarihi'], sp['sinav_saati'], derslik['derslik_adi']))
 
         if not sinavlar:
             messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
@@ -123,37 +116,39 @@ class SeatingMixin:
 
 
     def show_assign_proctor(self):
-        """Sınav programındaki sınavlara öğretim görevlisi gözetmen olarak atanır."""
         if not self.current_bolum:
             messagebox.showerror("Hata", "Önce bir bölüm seçin!")
             return
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT id, sicil_no, ad_soyad
-            FROM ogretim_gorevlileri
-            WHERE bolum_adi=%s
-            ORDER BY ad_soyad
-        """, (self.current_bolum,))
-        gorevliler = cursor.fetchall()
+        gorevliler = [(g['_id'], g['sicil_no'], g['ad_soyad'])
+                      for g in self.db.ogretim_gorevlileri.find({'bolum_adi': self.current_bolum})
+                      .sort('ad_soyad', 1)]
 
         if not gorevliler:
-            cursor.close()
             messagebox.showinfo("Bilgi", "Önce en az bir öğretim görevlisi eklemelisiniz!")
             return
 
-        cursor.execute("""
-            SELECT sp.id, d.ders_kodu, d.ders_adi, sp.sinav_tarihi, sp.sinav_saati,
-                   dr.derslik_adi, og.id, og.ad_soyad
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            LEFT JOIN ogretim_gorevlileri og ON sp.gozetmen_id = og.id
-            WHERE sp.bolum_adi=%s
-            ORDER BY sp.sinav_tarihi, sp.sinav_saati
-        """, (self.current_bolum,))
-        sinavlar = cursor.fetchall()
-        cursor.close()
+        sp_docs = list(self.db.sinav_programi.find({'bolum_adi': self.current_bolum})
+                       .sort([('sinav_tarihi', 1), ('sinav_saati', 1)]))
+
+        ders_ids = list({sp['ders_id'] for sp in sp_docs})
+        derslik_ids = list({sp['derslik_id'] for sp in sp_docs if sp.get('derslik_id') is not None})
+        gozetmen_ids = list({sp['gozetmen_id'] for sp in sp_docs if sp.get('gozetmen_id') is not None})
+
+        ders_map = {d['_id']: d for d in self.db.dersler.find({'_id': {'$in': ders_ids}})}
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+        gorevli_map = {g['_id']: g for g in self.db.ogretim_gorevlileri.find({'_id': {'$in': gozetmen_ids}})}
+
+        sinavlar = []
+        for sp in sp_docs:
+            ders = ders_map.get(sp['ders_id'])
+            derslik = derslik_map.get(sp.get('derslik_id'))
+            if not ders or not derslik:
+                continue
+            gozetmen = gorevli_map.get(sp.get('gozetmen_id'))
+            sinavlar.append((sp['_id'], ders['ders_kodu'], ders['ders_adi'], sp['sinav_tarihi'],
+                              sp['sinav_saati'], derslik['derslik_adi'], sp.get('gozetmen_id'),
+                              gozetmen['ad_soyad'] if gozetmen else None))
 
         if not sinavlar:
             messagebox.showinfo("Bilgi", "Henüz sınav programı oluşturulmamış!")
@@ -216,11 +211,7 @@ class SeatingMixin:
             sinav_id = sinav_id_by_item[item_id]
             gozetmen_id = gorevli_id_by_isim[secilen_isim]
 
-            update_cursor = self.db.connection.cursor()
-            update_cursor.execute("UPDATE sinav_programi SET gozetmen_id=%s WHERE id=%s",
-                                   (gozetmen_id, sinav_id))
-            self.db.connection.commit()
-            update_cursor.close()
+            self.db.sinav_programi.update_one({'_id': sinav_id}, {'$set': {'gozetmen_id': gozetmen_id}})
 
             values = list(tree.item(item_id, "values"))
             values[4] = secilen_isim
@@ -233,59 +224,44 @@ class SeatingMixin:
 
 
     def generate_seating_plan(self, sinav_id):
-        """
-        Oturma planı oluşturma (Sanal Koltuk Mantığı ile).
-        Her derslik kutusundaki koltuklardan tek sıradakiler (1, 3, 5, ...)
-        doldurulur, çift sıradakiler (2, 4, ...) anti-kopya boşluğu olarak
-        bırakılır — bkz. is_seat_empty(). Bu kural derslik_kodu'ndaki
-        sira_yapisi değeri ne olursa olsun (2'li, 3'lü, 4'lü sıra vb.) çalışır.
-        """
+        """Öğrencileri karışık sırayla dersliklere yerleştirir.
 
-        cursor = self.db.connection.cursor()
-
-        
-        cursor.execute("""
-            SELECT sp.ders_id, sp.sinav_tarihi, sp.sinav_saati
-            FROM sinav_programi sp
-            WHERE sp.id=%s
-        """, (sinav_id,))
-
-        sinav_info = cursor.fetchone()
+        Koltuk numarası sutun_no = kutu_sutun * 10 + koltuk_no olarak saklanır."""
+        sinav_info = self.db.sinav_programi.find_one({'_id': sinav_id})
         if not sinav_info:
             messagebox.showerror("Hata", "Sınav bulunamadı!")
-            cursor.close()
             return
 
-        ders_id = sinav_info[0]
-        sinav_tarihi = sinav_info[1]
-        sinav_saati = sinav_info[2]
+        ders_id = sinav_info['ders_id']
+        sinav_tarihi = sinav_info['sinav_tarihi']
+        sinav_saati = sinav_info['sinav_saati']
 
-        
-        cursor.execute("""
-            SELECT sp.id, sp.derslik_id, dr.kapasite, dr.enine_sira, dr.boyuna_sira, dr.sira_yapisi, dr.derslik_adi
-            FROM sinav_programi sp
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            WHERE sp.ders_id=%s AND sp.sinav_tarihi=%s AND sp.sinav_saati=%s
-            ORDER BY dr.kapasite DESC
-        """, (ders_id, sinav_tarihi, sinav_saati))
 
-        tum_derslikler = cursor.fetchall()
+        sp_docs = list(self.db.sinav_programi.find({
+            'ders_id': ders_id, 'sinav_tarihi': sinav_tarihi, 'sinav_saati': sinav_saati,
+        }))
+        derslik_ids = [sp['derslik_id'] for sp in sp_docs if sp.get('derslik_id') is not None]
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+
+        sp_with_derslik = [(sp, derslik_map[sp['derslik_id']]) for sp in sp_docs
+                            if sp.get('derslik_id') in derslik_map]
+        sp_with_derslik.sort(key=lambda pair: pair[1]['kapasite'], reverse=True)
+
+        tum_derslikler = [(sp['_id'], derslik['_id'], derslik['kapasite'], derslik['enine_sira'],
+                            derslik['boyuna_sira'], derslik['sira_yapisi'], derslik['derslik_adi'])
+                           for sp, derslik in sp_with_derslik]
 
         if not tum_derslikler:
             messagebox.showerror("Hata", "Derslik bilgisi bulunamadı!")
-            cursor.close()
             return
 
-        
-        cursor.execute("""
-            SELECT o.id, o.ogrenci_no, o.ad_soyad
-            FROM ogrenciler o
-            JOIN ogrenci_ders od ON o.id = od.ogrenci_id
-            WHERE od.ders_id=%s
-            ORDER BY RAND()
-        """, (ders_id,))
 
-        ogrenciler = cursor.fetchall()
+        enrollment_docs = list(self.db.ogrenci_ders.find({'ders_id': ders_id}, {'ogrenci_id': 1}))
+        ogrenci_ids = [e['ogrenci_id'] for e in enrollment_docs]
+        ogrenci_map = {o['_id']: o for o in self.db.ogrenciler.find({'_id': {'$in': ogrenci_ids}})}
+        ogrenciler = [(oid, ogrenci_map[oid]['ogrenci_no'], ogrenci_map[oid]['ad_soyad'])
+                      for oid in ogrenci_ids if oid in ogrenci_map]
+        random.shuffle(ogrenciler)
 
         toplam_kapasite = sum(d[2] for d in tum_derslikler)
 
@@ -294,16 +270,15 @@ class SeatingMixin:
                 "Hata",
                 f"❌ Öğrenci sayısı ({len(ogrenciler)}) toplam derslik kapasitesini ({toplam_kapasite}) aşıyor!"
             )
-            cursor.close()
             return
 
-        
-        for derslik_data in tum_derslikler:
-            cursor.execute("DELETE FROM oturma_plani WHERE sinav_id=%s", (derslik_data[0],))
 
-       
+        self.db.oturma_plani.delete_many({'sinav_id': {'$in': [d[0] for d in tum_derslikler]}})
+
+
         ogrenci_index = 0
         yerlestirildi = 0
+        oturma_docs = []
 
         for derslik_data in tum_derslikler:
             sinav_programi_id = derslik_data[0]
@@ -311,25 +286,25 @@ class SeatingMixin:
             kapasite = derslik_data[2]
             enine = derslik_data[3]
             boyuna = derslik_data[4]
-            sira_yapi = derslik_data[5] 
+            sira_yapi = derslik_data[5]
 
-          
+
             students_to_seat_in_derslik = min(kapasite, len(ogrenciler) - ogrenci_index)
 
             seated_count_in_derslik = 0
 
-            
-            for sira in range(1, boyuna + 1):
-                for kutu_sutun in range(1, enine + 1): 
 
-                    
+            for sira in range(1, boyuna + 1):
+                for kutu_sutun in range(1, enine + 1):
+
+
                     for koltuk_no in range(1, sira_yapi + 1):
 
-                       
+
                         if is_seat_empty(koltuk_no, sira_yapi):
                             continue
 
-                        
+
                         if ogrenci_index >= len(ogrenciler) or seated_count_in_derslik >= students_to_seat_in_derslik:
                             break
 
@@ -337,11 +312,11 @@ class SeatingMixin:
 
                         sutun_kaydi = kutu_sutun * 10 + koltuk_no
 
-                        
-                        cursor.execute("""
-                            INSERT INTO oturma_plani (sinav_id, ogrenci_id, derslik_id, sira_no, sutun_no)
-                            VALUES (%s, %s, %s, %s, %s)
-                        """, (sinav_programi_id, ogrenci[0], derslik_id, sira, sutun_kaydi))
+
+                        oturma_docs.append({
+                            'sinav_id': sinav_programi_id, 'ogrenci_id': ogrenci[0],
+                            'derslik_id': derslik_id, 'sira_no': sira, 'sutun_no': sutun_kaydi,
+                        })
 
                         seated_count_in_derslik += 1
                         ogrenci_index += 1
@@ -353,8 +328,8 @@ class SeatingMixin:
                 if ogrenci_index >= len(ogrenciler):
                     break
 
-        self.db.connection.commit()
-        cursor.close()
+        if oturma_docs:
+            self.db.oturma_plani.insert_many(oturma_docs)
 
         derslik_sayisi = len(tum_derslikler)
         derslik_isimleri = ', '.join(d[6] for d in tum_derslikler)
@@ -370,58 +345,41 @@ class SeatingMixin:
 
 
     def view_seating_plan(self, sinav_id):
-        cursor = self.db.connection.cursor()
-
-        
-        cursor.execute("""
-            SELECT
-                d.ders_kodu,
-                d.ders_adi,
-                sp.sinav_tarihi,
-                sp.sinav_saati,
-                sp.ders_id
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            WHERE sp.id=%s
-        """, (sinav_id,))
-
-        sinav_info = cursor.fetchone()
+        sinav_info = self.db.sinav_programi.find_one({'_id': sinav_id})
         if not sinav_info:
             messagebox.showerror("Hata", "Sınav bulunamadı!")
-            cursor.close()
             return
 
-        ders_kodu = sinav_info[0]
-        ders_adi = sinav_info[1]
-        sinav_tarihi = sinav_info[2]
-        sinav_saati = sinav_info[3]
-        ders_id = sinav_info[4]
+        ders = self.db.dersler.find_one({'_id': sinav_info['ders_id']})
+        if not ders:
+            messagebox.showerror("Hata", "Sınav bulunamadı!")
+            return
 
-        
-        cursor.execute("""
-            SELECT
-                dr.id,
-                dr.derslik_adi,
-                dr.enine_sira,
-                dr.boyuna_sira,
-                dr.sira_yapisi,
-                sp.id as sinav_programi_id
-            FROM sinav_programi sp
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            WHERE sp.ders_id=%s
-            AND sp.sinav_tarihi=%s
-            AND sp.sinav_saati=%s
-            ORDER BY dr.kapasite DESC
-        """, (ders_id, sinav_tarihi, sinav_saati))
+        ders_kodu = ders['ders_kodu']
+        ders_adi = ders['ders_adi']
+        sinav_tarihi = sinav_info['sinav_tarihi']
+        sinav_saati = sinav_info['sinav_saati']
+        ders_id = sinav_info['ders_id']
 
-        tum_derslikler = cursor.fetchall()
+
+        sp_docs = list(self.db.sinav_programi.find({
+            'ders_id': ders_id, 'sinav_tarihi': sinav_tarihi, 'sinav_saati': sinav_saati,
+        }))
+        derslik_ids = [sp['derslik_id'] for sp in sp_docs if sp.get('derslik_id') is not None]
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+
+        sp_with_derslik = [(sp, derslik_map[sp['derslik_id']]) for sp in sp_docs
+                            if sp.get('derslik_id') in derslik_map]
+        sp_with_derslik.sort(key=lambda pair: pair[1]['kapasite'], reverse=True)
+
+        tum_derslikler = [(derslik['_id'], derslik['derslik_adi'], derslik['enine_sira'],
+                            derslik['boyuna_sira'], derslik['sira_yapisi'], sp['_id'])
+                           for sp, derslik in sp_with_derslik]
 
         if not tum_derslikler:
             messagebox.showwarning("Uyarı", "Bu sınav için derslik bulunamadı!")
-            cursor.close()
             return
 
-        #
         view_window = tk.Toplevel(self.root)
         view_window.title(f"Oturma Planı - {ders_adi}")
         view_window.geometry("1200x800")
@@ -462,13 +420,8 @@ class SeatingMixin:
         selection = {}
 
         def swap_seats(op_id_a, sira_a, sutun_a, op_id_b, sira_b, sutun_b):
-            update_cursor = self.db.connection.cursor()
-            update_cursor.execute("UPDATE oturma_plani SET sira_no=%s, sutun_no=%s WHERE id=%s",
-                                   (sira_b, sutun_b, op_id_a))
-            update_cursor.execute("UPDATE oturma_plani SET sira_no=%s, sutun_no=%s WHERE id=%s",
-                                   (sira_a, sutun_a, op_id_b))
-            self.db.connection.commit()
-            update_cursor.close()
+            self.db.oturma_plani.update_one({'_id': op_id_a}, {'$set': {'sira_no': sira_b, 'sutun_no': sutun_b}})
+            self.db.oturma_plani.update_one({'_id': op_id_b}, {'$set': {'sira_no': sira_a, 'sutun_no': sutun_a}})
 
         def on_seat_click(op_id, ad_soyad, sira, sutun_no, sinav_programi_id,
                            canvas_widget, derslik_data):
@@ -503,26 +456,25 @@ class SeatingMixin:
             draw_seats(canvas_widget, derslik_data)
 
         def draw_seats(canvas_widget, derslik_data):
-            """Bir dersliğin koltuk ızgarasını (yeniden) çizer. Hem ilk açılışta
-            hem de tıkla-değiştir sonrası tazelemek için kullanılır; her
-            çağrıda güncel verileri DB'den tazeden okur."""
-            derslik_id = derslik_data[0]
+            """Koltuk ızgarasını güncel verilerle yeniden çizer."""
             derslik_adi = derslik_data[1]
             enine = derslik_data[2]
             boyuna = derslik_data[3]
             sira_yapi = derslik_data[4]
             sinav_programi_id = derslik_data[5]
 
-            fetch_cursor = self.db.connection.cursor()
-            fetch_cursor.execute("""
-                SELECT op.id, op.sira_no, op.sutun_no, o.ogrenci_no, o.ad_soyad
-                FROM oturma_plani op
-                JOIN ogrenciler o ON op.ogrenci_id = o.id
-                WHERE op.sinav_id=%s
-                ORDER BY op.sira_no, op.sutun_no
-            """, (sinav_programi_id,))
-            oturma_verileri = fetch_cursor.fetchall()
-            fetch_cursor.close()
+            oturma_docs = list(self.db.oturma_plani.find({'sinav_id': sinav_programi_id}))
+            ogrenci_ids = list({o['ogrenci_id'] for o in oturma_docs})
+            ogrenci_map = {o['_id']: o for o in self.db.ogrenciler.find({'_id': {'$in': ogrenci_ids}})}
+
+            oturma_verileri = []
+            for op in oturma_docs:
+                ogrenci = ogrenci_map.get(op['ogrenci_id'])
+                if not ogrenci:
+                    continue
+                oturma_verileri.append((op['_id'], op['sira_no'], op['sutun_no'],
+                                         ogrenci['ogrenci_no'], ogrenci['ad_soyad']))
+            oturma_verileri.sort(key=lambda r: (r[1], r[2]))
 
             oturma_dict = defaultdict(list)
             for op_id, sira, sanal_sutun, ogr_no, ad_soyad in oturma_verileri:
@@ -601,9 +553,7 @@ class SeatingMixin:
                                                      text=ogr_no, tags=(cell_tag,),
                                                      font=("Arial", 7), fill="white")
 
-                            # sanal sütun kodlaması generate_seating_plan ile aynı olmalı:
-                            # orada kutu_sutun 1-tabanlıdır (range(1, enine+1)); burada
-                            # döngü değişkeni 0-tabanlı olduğundan +1 ile normalize edilir.
+                            # Numaralandırma 1'den başlıyor.
                             sutun_no = (kutu_sutun + 1) * 10 + koltuk_no
                             canvas_widget.tag_bind(
                                 cell_tag, "<Button-1>",
@@ -665,9 +615,7 @@ class SeatingMixin:
 
             draw_seats(canvas_widget, derslik_data)
 
-        cursor.close()
 
-      
         btn_frame = tk.Frame(view_window)
         btn_frame.pack(pady=10)
 
@@ -697,8 +645,7 @@ class SeatingMixin:
 
     def send_seating_notifications(self, sinav_programi_ids, ders_kodu, ders_adi,
                                     sinav_tarihi, sinav_saati):
-        """Bu sınavda oturma planına dahil edilmiş, e-postası kayıtlı tüm
-        öğrencilere sınav yeri/saati bilgisini e-posta ile gönderir."""
+        """E-postası kayıtlı öğrencilere sınav yeri/saati bilgisini gönderir."""
         if not smtp_configured():
             messagebox.showerror(
                 "SMTP Yapılandırılmamış",
@@ -708,18 +655,24 @@ class SeatingMixin:
             )
             return
 
-        cursor = self.db.connection.cursor()
-        format_strings = ','.join(['%s'] * len(sinav_programi_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT o.email, o.ad_soyad, dr.derslik_adi, op.sira_no, op.sutun_no
-            FROM oturma_plani op
-            JOIN ogrenciler o ON op.ogrenci_id = o.id
-            JOIN derslikler dr ON op.derslik_id = dr.id
-            WHERE op.sinav_id IN ({format_strings})
-            AND o.email IS NOT NULL AND o.email != ''
-        """, sinav_programi_ids)
-        alicilar = cursor.fetchall()
-        cursor.close()
+        oturma_docs = list(self.db.oturma_plani.find({'sinav_id': {'$in': sinav_programi_ids}}))
+        ogrenci_ids = list({o['ogrenci_id'] for o in oturma_docs})
+        derslik_ids = list({o['derslik_id'] for o in oturma_docs if o.get('derslik_id') is not None})
+        ogrenci_map = {o['_id']: o for o in self.db.ogrenciler.find({'_id': {'$in': ogrenci_ids}})}
+        derslik_map = {d['_id']: d for d in self.db.derslikler.find({'_id': {'$in': derslik_ids}})}
+
+        alicilar_set = set()
+        for op in oturma_docs:
+            ogrenci = ogrenci_map.get(op['ogrenci_id'])
+            derslik = derslik_map.get(op.get('derslik_id'))
+            if not ogrenci or not derslik:
+                continue
+            email = ogrenci.get('email')
+            if not email:
+                continue
+            alicilar_set.add((email, ogrenci['ad_soyad'], derslik['derslik_adi'], op['sira_no'], op['sutun_no']))
+
+        alicilar = list(alicilar_set)
 
         if not alicilar:
             messagebox.showinfo(
@@ -773,21 +726,12 @@ class SeatingMixin:
         list_window.title("Oturma Planı - Liste Görünümü")
         list_window.geometry("700x600")
 
-        cursor = self.db.connection.cursor()
-
-        
-        cursor.execute("""
-            SELECT d.ders_kodu, d.ders_adi, dr.derslik_adi
-            FROM sinav_programi sp
-            JOIN dersler d ON sp.ders_id = d.id
-            JOIN derslikler dr ON sp.derslik_id = dr.id
-            WHERE sp.id=%s
-        """, (sinav_id,))
-
-        sinav_info = cursor.fetchone()
+        sp = self.db.sinav_programi.find_one({'_id': sinav_id})
+        ders = self.db.dersler.find_one({'_id': sp['ders_id']})
+        derslik = self.db.derslikler.find_one({'_id': sp['derslik_id']})
 
         tk.Label(list_window,
-                 text=f"{sinav_info[0]} - {sinav_info[1]}\nDerslik: {sinav_info[2]}",
+                 text=f"{ders['ders_kodu']} - {ders['ders_adi']}\nDerslik: {derslik['derslik_adi']}",
                  font=("Arial", 12, "bold")).pack(pady=10)
 
         search_frame = tk.Frame(list_window)
@@ -814,16 +758,16 @@ class SeatingMixin:
             tree.heading(col, text=col)
             tree.column(col, width=150)
 
-        cursor.execute("""
-            SELECT op.sira_no, op.sutun_no, o.ogrenci_no, o.ad_soyad
-            FROM oturma_plani op
-            JOIN ogrenciler o ON op.ogrenci_id = o.id
-            WHERE op.sinav_id=%s
-            ORDER BY op.sira_no, op.sutun_no
-        """, (sinav_id,))
-
-        all_rows = cursor.fetchall()
-        cursor.close()
+        oturma_docs = list(self.db.oturma_plani.find({'sinav_id': sinav_id}))
+        ogrenci_ids = list({o['ogrenci_id'] for o in oturma_docs})
+        ogrenci_map = {o['_id']: o for o in self.db.ogrenciler.find({'_id': {'$in': ogrenci_ids}})}
+        all_rows = []
+        for op in oturma_docs:
+            ogrenci = ogrenci_map.get(op['ogrenci_id'])
+            if not ogrenci:
+                continue
+            all_rows.append((op['sira_no'], op['sutun_no'], ogrenci['ogrenci_no'], ogrenci['ad_soyad']))
+        all_rows.sort(key=lambda r: (r[0], r[1]))
 
         def populate(filter_text=""):
             tree.delete(*tree.get_children())
@@ -835,8 +779,7 @@ class SeatingMixin:
         populate()
         tree.pack(fill=tk.BOTH, expand=True)
 
-        # Sonuçları DB'ye tekrar gitmeden, zaten yerelde tutulan all_rows
-        # üzerinden her tuş vuruşunda filtreler.
+        # Arama, veritabanına gitmeden yerel listeden yapılıyor.
         search_var.trace_add("write", lambda *_: populate(search_var.get()))
 
 
@@ -844,23 +787,13 @@ class SeatingMixin:
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
                 filetypes=[("Excel files", "*.xlsx")],
-                initialfile=f"oturma_plani_{sinav_info[0]}.xlsx"
+                initialfile=f"oturma_plani_{ders['ders_kodu']}.xlsx"
             )
 
             if file_path:
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    SELECT op.sira_no, op.sutun_no, o.ogrenci_no, o.ad_soyad
-                    FROM oturma_plani op
-                    JOIN ogrenciler o ON op.ogrenci_id = o.id
-                    WHERE op.sinav_id=%s
-                    ORDER BY op.sira_no, op.sutun_no
-                """, (sinav_id,))
-
-                df = pd.DataFrame(cursor.fetchall(),
+                df = pd.DataFrame(all_rows,
                                   columns=["Sıra No", "Sütun No", "Öğrenci No", "Ad Soyad"])
                 df.to_excel(file_path, index=False)
-                cursor.close()
                 messagebox.showinfo("Başarılı", "Excel dosyası oluşturuldu!")
 
         tk.Button(list_window, text="Excel Olarak İndir", font=("Arial", 11),
@@ -869,7 +802,7 @@ class SeatingMixin:
 
     def export_seating_to_pdf_multi(self, sinav_id, ders_kodu, ders_adi,
                                      sinav_tarihi, sinav_saati, tum_oturma_verileri):
-        
+
         file_path = filedialog.asksaveasfilename(
             defaultextension=".pdf",
             filetypes=[("PDF files", "*.pdf")],
@@ -883,14 +816,14 @@ class SeatingMixin:
             c = pdf_canvas.Canvas(file_path, pagesize=landscape(A4))
             width, height = landscape(A4)
 
-           
+
             for derslik_adi, derslik_data in tum_oturma_verileri.items():
                 oturma_dict = derslik_data['oturma']
                 enine = derslik_data['enine']
                 boyuna = derslik_data['boyuna']
                 sira_yapi = derslik_data['sira_yapi']
 
-              
+
                 c.setFont("Helvetica-Bold", 16)
                 c.drawString(2*cm, height - 2*cm, f"Oturma Plani: {ders_adi}")
 
@@ -900,20 +833,20 @@ class SeatingMixin:
                 c.drawString(2*cm, height - 3.7*cm, f"Tarih: {sinav_tarihi} | Saat: {sinav_saati}")
                 c.drawString(2*cm, height - 4.2*cm, f"Duzen: {boyuna}x{enine} ({sira_yapi}'lu sira)")
 
-              
+
                 start_x = 2*cm
                 start_y = height - 6*cm
-                
-               
-                koltuk_width = 1.6*cm   
-                koltuk_height = 1.4*cm  
-                koltuk_gap = 0.2*cm  
-                kutu_gap = 0.25*cm      
-                sira_gap = 0.25*cm      
 
-                
+
+                koltuk_width = 1.6*cm
+                koltuk_height = 1.4*cm
+                koltuk_gap = 0.2*cm
+                kutu_gap = 0.25*cm
+                sira_gap = 0.25*cm
+
+
                 c.setFillColorRGB(0.17, 0.24, 0.31)
-                
+
                 total_kutu_width = sira_yapi * koltuk_width + (sira_yapi - 1) * koltuk_gap
                 tahta_width = enine * total_kutu_width + (enine - 1) * kutu_gap
                 c.rect(start_x, start_y, tahta_width, 0.8*cm, fill=1)
@@ -921,56 +854,56 @@ class SeatingMixin:
                 c.setFont("Arial-Bold", 10)
                 c.drawString(start_x + tahta_width/2 - 1*cm, start_y + 0.3*cm, "TAHTA")
 
-                
+
                 current_y = start_y - sira_gap
-                
+
                 for sira in range(boyuna):
                     current_x = start_x
-                    
+
                     for kutu_sutun in range(enine):
-                       
+
                         kutu_key = (sira + 1, kutu_sutun + 1)
                         students_in_kutu = oturma_dict.get(kutu_key, [])
-                        
-                       
+
+
                         for koltuk_idx in range(sira_yapi):
                             koltuk_no = koltuk_idx + 1
-                            
-                            
+
+
                             x_pos = current_x + koltuk_idx * (koltuk_width + koltuk_gap)
                             y_pos = current_y - koltuk_height
-                            
-                            
+
+
                             is_empty_seat = is_seat_empty(koltuk_no, sira_yapi)
-                            
-                            
+
+
                             student_data = None
                             for k_no, ogr_no, ad_soyad in students_in_kutu:
                                 if k_no == koltuk_no:
                                     student_data = (ogr_no, ad_soyad)
                                     break
-                            
-                            
+
+
                             if is_empty_seat:
-                               
+
                                 c.setFillColorRGB(0.93, 0.94, 0.95)
                                 c.setStrokeColorRGB(0.74, 0.76, 0.78)
                                 c.rect(x_pos, y_pos, koltuk_width, koltuk_height, fill=1, stroke=1)
-                                
+
                                 c.setFillColorRGB(0.5, 0.55, 0.6)
                                 c.setFont("Arial", 6)
-                                c.drawString(x_pos + koltuk_width/2 - 0.2*cm, 
+                                c.drawString(x_pos + koltuk_width/2 - 0.2*cm,
                                            y_pos + koltuk_height/2 - 0.1*cm, "BOŞ")
-                                
+
                             elif student_data:
-                                
+
                                 c.setFillColorRGB(0.15, 0.68, 0.38)
                                 c.setStrokeColorRGB(0, 0, 0)
                                 c.rect(x_pos, y_pos, koltuk_width, koltuk_height, fill=1, stroke=1)
-                                
+
                                 ogr_no, ad_soyad = student_data
-                                
-                                
+
+
                                 isim_parcalari = ad_soyad.split()
                                 if len(isim_parcalari) >= 2:
                                     isim = isim_parcalari[0]
@@ -978,61 +911,61 @@ class SeatingMixin:
                                 else:
                                     isim = ad_soyad
                                     soyisim = ""
-                                
+
                                 c.setFillColorRGB(1, 1, 1)
-                                
-                                
+
+
                                 c.setFillColorRGB(0.2, 0.29, 0.37)
                                 c.setFont("Arial", 5)
-                                c.drawString(x_pos + 0.05*cm, 
-                                           y_pos + koltuk_height - 0.15*cm, 
+                                c.drawString(x_pos + 0.05*cm,
+                                           y_pos + koltuk_height - 0.15*cm,
                                            f"S{sira+1}-{kutu_sutun+1}.{koltuk_no}")
-                                
+
                                 c.setFillColorRGB(1, 1, 1)
-                                
-                                
+
+
                                 c.setFont("Arial-Bold", 8)
-                                c.drawString(x_pos + 0.1*cm, 
-                                           y_pos + koltuk_height - 0.45*cm, 
+                                c.drawString(x_pos + 0.1*cm,
+                                           y_pos + koltuk_height - 0.45*cm,
                                            isim[:15])
-                                
-                                
+
+
                                 if soyisim:
                                     c.setFont("Arial", 7)
-                                    c.drawString(x_pos + 0.1*cm, 
-                                               y_pos + koltuk_height - 0.75*cm, 
+                                    c.drawString(x_pos + 0.1*cm,
+                                               y_pos + koltuk_height - 0.75*cm,
                                                soyisim[:15])
-                                
-                               
+
+
                                 c.setFont("Arial", 6)
-                                c.drawString(x_pos + 0.1*cm, 
-                                           y_pos + 0.25*cm, 
+                                c.drawString(x_pos + 0.1*cm,
+                                           y_pos + 0.25*cm,
                                            str(ogr_no)[:11])
                             else:
-                                
+
                                 c.setFillColorRGB(0.58, 0.64, 0.66)
                                 c.setStrokeColorRGB(0, 0, 0)
                                 c.rect(x_pos, y_pos, koltuk_width, koltuk_height, fill=1, stroke=1)
-                                
+
                                 c.setFillColorRGB(1, 1, 1)
                                 c.setFont("Arial", 6)
-                                c.drawString(x_pos + koltuk_width/2 - 0.15*cm, 
+                                c.drawString(x_pos + koltuk_width/2 - 0.15*cm,
                                            y_pos + koltuk_height/2 - 0.05*cm, "---")
-                                
-                                
+
+
                                 c.setFillColorRGB(0.2, 0.29, 0.37)
                                 c.setFont("Arial", 5)
-                                c.drawString(x_pos + 0.05*cm, 
-                                           y_pos + koltuk_height - 0.15*cm, 
+                                c.drawString(x_pos + 0.05*cm,
+                                           y_pos + koltuk_height - 0.15*cm,
                                            f"S{sira+1}-{kutu_sutun+1}.{koltuk_no}")
-                        
-                        
+
+
                         current_x += total_kutu_width + kutu_gap
-                    
-                    
+
+
                     current_y -= (koltuk_height + sira_gap)
 
-                
+
                 table_start_y = current_y - 1.5*cm
 
                 if table_start_y > 3*cm:
@@ -1040,7 +973,7 @@ class SeatingMixin:
                     c.setFillColorRGB(0, 0, 0)
                     c.drawString(start_x, table_start_y + 0.5*cm, "Ogrenci Listesi:")
 
-                    
+
                     col_widths = [2*cm, 2*cm, 3*cm, 5*cm]
                     headers = ["Sira", "Koltuk No", "Ogrenci No", "Ad Soyad"]
 
@@ -1050,15 +983,15 @@ class SeatingMixin:
                         c.drawString(x_pos, table_start_y, header)
                         x_pos += col_widths[i]
 
-                    
+
                     c.line(start_x, table_start_y - 0.1*cm,
                            start_x + sum(col_widths), table_start_y - 0.1*cm)
 
-                   
+
                     c.setFont("Arial", 8)
                     y_pos = table_start_y - 0.5*cm
 
-                   
+
                     pdf_list_data = []
                     for (sira_anahtar, kutu_sutun), students in oturma_dict.items():
                         for koltuk_no, ogr_no, ad_soyad in students:
@@ -1081,15 +1014,14 @@ class SeatingMixin:
 
                         y_pos -= 0.5*cm
 
-                
+
                 c.showPage()
 
             c.save()
-            messagebox.showinfo("Başarılı", 
+            messagebox.showinfo("Başarılı",
                 f"PDF dosyası oluşturuldu!\n\n{len(tum_oturma_verileri)} derslik için oturma planı eklendi.")
 
         except Exception as e:
             messagebox.showerror("Hata", f"PDF oluşturulurken hata:\n{str(e)}")
             import traceback
             traceback.print_exc()
-

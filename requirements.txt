@@ -1,5 +1,6 @@
-mysql-connector-python
+pymongo
 pandas
+numpy
 openpyxl
 Pillow
 reportlab

@@ -1,23 +1,10 @@
 @echo off
 setlocal
 
-set MYSQL_DIR=C:\Users\sahin\mysql-server
-
-rem --- MySQL sunucusu calismiyorsa baslat ---
-netstat -an | findstr ":3306" | findstr "LISTENING" >nul
-if errorlevel 1 (
-    echo MySQL sunucusu baslatiliyor...
-    start "MySQL Server" /min "%MYSQL_DIR%\bin\mysqld.exe" --defaults-file="%MYSQL_DIR%\my.ini"
-    timeout /t 5 /nobreak >nul
-) else (
-    echo MySQL sunucusu zaten calisiyor.
-)
-
-rem --- Veritabani baglanti bilgileri ---
-set DB_HOST=localhost
-set DB_USER=root
-set DB_PASSWORD=
-set DB_NAME=sinav_takvimi_db
+rem --- MongoDB baglanti bilgileri ---
+rem MongoDB bir Windows servisi olarak calisir, ayrica baslatmaya gerek yoktur.
+set MONGO_URI=mongodb://localhost:27017
+set MONGO_DB_NAME=sinav_takvimi_db
 
 rem --- Varsayilan admin girisi: admin@kocaeli.edu.tr / admin123 ---
 rem (degistirmek isterseniz asagidaki iki satirin basindaki "rem "i silin)

@@ -1,15 +1,16 @@
 """Derslik ekleme/düzenleme/listeleme ve görsel yerleşim önizlemesi."""
 import tkinter as tk
 from tkinter import ttk, messagebox
-from mysql.connector import Error
+from pymongo.errors import DuplicateKeyError, PyMongoError
+
+from .. import cascades
 
 
 def compute_classroom_capacity(enine, boyuna, sira_yapi):
-    """Bir dersliğin gerçek oturma kapasitesini hesaplar: her kutuda anti-kopya
-    boşluğu nedeniyle sadece tek sıradaki koltuklar (1, 3, 5, ...) dolar —
-    bkz. seating.py'deki is_seat_empty(). Kapasite bu yüzden elle girilmez,
-    buradan otomatik hesaplanır; aksi halde kullanıcının girdiği sayı fiziksel
-    olarak oturtulabilecek öğrenci sayısıyla tutarsız kalabilir."""
+    """Dersliğe kaç öğrenci oturabileceğini hesaplar.
+
+    Anti-kopya boşluğu bırakıldığı için her kutudaki koltukların yarısı dolar.
+    Bu yüzden kapasite elle girilmez, buradan hesaplanır."""
     if enine <= 0 or boyuna <= 0 or sira_yapi <= 0:
         return 0
     doluluk_kutu_basi = (sira_yapi + 1) // 2
@@ -77,20 +78,19 @@ class ClassroomMixin:
 
                 kapasite = compute_classroom_capacity(enine, boyuna, sira_yapi)
 
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    INSERT INTO derslikler (bolum_adi, derslik_kodu, derslik_adi, kapasite,
-                                            enine_sira, boyuna_sira, sira_yapisi)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (self.current_bolum, kod, ad, kapasite, enine, boyuna, sira_yapi))
-                self.db.connection.commit()
-                cursor.close()
+                self.db.derslikler.insert_one({
+                    'bolum_adi': self.current_bolum, 'derslik_kodu': kod, 'derslik_adi': ad,
+                    'kapasite': kapasite, 'enine_sira': enine, 'boyuna_sira': boyuna,
+                    'sira_yapisi': sira_yapi,
+                })
                 messagebox.showinfo("Başarılı", f"Derslik eklendi! Kapasite: {kapasite}")
                 classroom_window.destroy()
                 self.show_main_menu()
             except ValueError:
                 messagebox.showerror("Hata", "Sayısal değerler geçerli olmalı!")
-            except Error as e:
+            except DuplicateKeyError:
+                messagebox.showerror("Hata", "Bu derslik kodu zaten mevcut!")
+            except PyMongoError as e:
                 messagebox.showerror("Hata", f"Derslik eklenemedi: {e}")
 
         tk.Button(classroom_window, text="Kaydet", font=("Arial", 12),
@@ -106,16 +106,12 @@ class ClassroomMixin:
         edit_window.title("Derslik Düzenle")
         edit_window.geometry("600x600")
 
-        
+
         tk.Label(edit_window, text="Düzenlenecek Dersliği Seçin:", font=("Arial", 12, "bold")).pack(pady=10)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT id, derslik_kodu, derslik_adi, kapasite, enine_sira, boyuna_sira, sira_yapisi
-            FROM derslikler WHERE bolum_adi=%s
-        """, (self.current_bolum,))
-        derslikler = cursor.fetchall()
-        cursor.close()
+        docs = list(self.db.derslikler.find({'bolum_adi': self.current_bolum}))
+        derslikler = [(d['_id'], d['derslik_kodu'], d['derslik_adi'], d['kapasite'],
+                       d['enine_sira'], d['boyuna_sira'], d['sira_yapisi']) for d in docs]
 
         if not derslikler:
             messagebox.showinfo("Bilgi", "Henüz derslik bulunmuyor!")
@@ -132,7 +128,7 @@ class ClassroomMixin:
                                      values=list(derslik_dict.keys()), state="readonly", width=40)
         derslik_combo.pack(pady=10)
 
-        
+
         edit_frame = tk.Frame(edit_window)
         edit_frame.pack(pady=20, padx=20, fill=tk.BOTH, expand=True)
 
@@ -207,20 +203,17 @@ class ClassroomMixin:
 
                 kapasite = compute_classroom_capacity(enine, boyuna, sira_yapi)
 
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    UPDATE derslikler
-                    SET derslik_kodu=%s, derslik_adi=%s, kapasite=%s,
-                        enine_sira=%s, boyuna_sira=%s, sira_yapisi=%s
-                    WHERE id=%s AND bolum_adi=%s
-                """, (kod, ad, kapasite, enine, boyuna, sira_yapi, derslik_id, self.current_bolum))
-                self.db.connection.commit()
-                cursor.close()
+                self.db.derslikler.update_one(
+                    {'_id': derslik_id, 'bolum_adi': self.current_bolum},
+                    {'$set': {'derslik_kodu': kod, 'derslik_adi': ad, 'kapasite': kapasite,
+                              'enine_sira': enine, 'boyuna_sira': boyuna, 'sira_yapisi': sira_yapi}})
                 messagebox.showinfo("Başarılı", "Derslik güncellendi!")
                 edit_window.destroy()
             except ValueError:
                 messagebox.showerror("Hata", "Sayısal değerler geçerli olmalı!")
-            except Error as e:
+            except DuplicateKeyError:
+                messagebox.showerror("Hata", "Bu derslik kodu zaten mevcut!")
+            except PyMongoError as e:
                 messagebox.showerror("Hata", f"Derslik güncellenemedi: {e}")
 
         tk.Button(edit_window, text="Güncelle", font=("Arial", 12),
@@ -249,23 +242,20 @@ class ClassroomMixin:
                 messagebox.showerror("Hata", "Derslik kodu girin!")
                 return
 
-            cursor = self.db.connection.cursor()
-            cursor.execute("""
-                SELECT * FROM derslikler
-                WHERE bolum_adi=%s AND derslik_kodu=%s
-            """, (self.current_bolum, kod))
-            result = cursor.fetchone()
-            cursor.close()
+            result = self.db.derslikler.find_one({'bolum_adi': self.current_bolum, 'derslik_kodu': kod})
 
             if result:
-                self.visualize_classroom(result)
+                classroom_tuple = (result['_id'], result['bolum_adi'], result['derslik_kodu'],
+                                    result['derslik_adi'], result['kapasite'], result['enine_sira'],
+                                    result['boyuna_sira'], result['sira_yapisi'])
+                self.visualize_classroom(classroom_tuple)
             else:
                 messagebox.showinfo("Bilgi", "Derslik bulunamadı!")
 
         tk.Button(search_frame, text="Ara ve Görselleştir", font=("Arial", 11),
                   bg="#3498db", fg="white", command=search_classroom).pack(side=tk.LEFT, padx=5)
 
-       
+
         tree_frame = tk.Frame(list_window)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -280,15 +270,11 @@ class ClassroomMixin:
             tree.heading(col, text=col)
             tree.column(col, width=120)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT derslik_kodu, derslik_adi, kapasite, enine_sira, boyuna_sira, sira_yapisi
-            FROM derslikler WHERE bolum_adi=%s
-        """, (self.current_bolum,))
-
-        for row in cursor.fetchall():
-            tree.insert("", tk.END, values=row)
-        cursor.close()
+        docs = self.db.derslikler.find({'bolum_adi': self.current_bolum})
+        for d in docs:
+            tree.insert("", tk.END, values=(
+                d['derslik_kodu'], d['derslik_adi'], d['kapasite'],
+                d['enine_sira'], d['boyuna_sira'], d['sira_yapisi']))
 
         tree.pack(fill=tk.BOTH, expand=True)
 
@@ -302,13 +288,9 @@ class ClassroomMixin:
             kod = item['values'][0]
 
             if messagebox.askyesno("Onay", f"{kod} kodlu derslik silinsin mi?"):
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    DELETE FROM derslikler
-                    WHERE bolum_adi=%s AND derslik_kodu=%s
-                """, (self.current_bolum, kod))
-                self.db.connection.commit()
-                cursor.close()
+                derslik = self.db.derslikler.find_one({'bolum_adi': self.current_bolum, 'derslik_kodu': kod})
+                if derslik:
+                    cascades.delete_classroom(self.db, derslik['_id'])
                 tree.delete(selected[0])
                 self.log_activity("Derslik silindi", kod)
                 messagebox.showinfo("Başarılı", "Derslik silindi!")
@@ -352,9 +334,8 @@ Sıra Yapısı: {classroom_data[7]}'lü
                 x2 = x1 + cell_width
                 y2 = y1 + cell_height
 
-                
+
                 color = "#3498db" if (col % sira_yapi) < (sira_yapi - 1) else "#95a5a6"
                 canvas_widget.create_rectangle(x1, y1, x2, y2, fill=color, outline="black")
                 canvas_widget.create_text((x1+x2)/2, (y1+y2)/2,
                                          text=f"{row+1},{col+1}", font=("Arial", 8))
-

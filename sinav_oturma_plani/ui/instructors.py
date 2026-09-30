@@ -1,7 +1,9 @@
 """Öğretim görevlisi ekleme/düzenleme/listeleme."""
 import tkinter as tk
 from tkinter import ttk, messagebox
-from mysql.connector import Error
+from pymongo.errors import DuplicateKeyError, PyMongoError
+
+from .. import cascades
 
 
 class InstructorMixin:
@@ -57,20 +59,16 @@ class InstructorMixin:
                 return
 
             try:
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    INSERT INTO ogretim_gorevlileri (bolum_adi, sicil_no, ad_soyad, unvan, email, telefon)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (self.current_bolum, sicil, ad_soyad, unvan, email, telefon))
-                self.db.connection.commit()
-                cursor.close()
+                self.db.ogretim_gorevlileri.insert_one({
+                    'bolum_adi': self.current_bolum, 'sicil_no': sicil, 'ad_soyad': ad_soyad,
+                    'unvan': unvan, 'email': email, 'telefon': telefon,
+                })
                 messagebox.showinfo("Başarılı", "Öğretim görevlisi eklendi!")
                 inst_window.destroy()
-            except Error as e:
-                if "Duplicate entry" in str(e):
-                    messagebox.showerror("Hata", "Bu sicil no zaten mevcut!")
-                else:
-                    messagebox.showerror("Hata", f"Eklenemedi: {e}")
+            except DuplicateKeyError:
+                messagebox.showerror("Hata", "Bu sicil no zaten mevcut!")
+            except PyMongoError as e:
+                messagebox.showerror("Hata", f"Eklenemedi: {e}")
 
         tk.Button(inst_window, text="Kaydet", font=("Arial", 12),
                   bg="#27ae60", fg="white", command=save_instructor).grid(
@@ -90,13 +88,9 @@ class InstructorMixin:
         tk.Label(edit_window, text="Öğretim Görevlisi Seçin:",
                  font=("Arial", 12, "bold")).pack(pady=10)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT id, sicil_no, ad_soyad, unvan, email, telefon
-            FROM ogretim_gorevlileri WHERE bolum_adi=%s
-        """, (self.current_bolum,))
-        gorevliler = cursor.fetchall()
-        cursor.close()
+        docs = list(self.db.ogretim_gorevlileri.find({'bolum_adi': self.current_bolum}))
+        gorevliler = [(d['_id'], d['sicil_no'], d['ad_soyad'], d.get('unvan'),
+                       d.get('email'), d.get('telefon')) for d in docs]
 
         if not gorevliler:
             messagebox.showinfo("Bilgi", "Henüz öğretim görevlisi bulunmuyor!")
@@ -170,17 +164,13 @@ class InstructorMixin:
                 return
 
             try:
-                cursor = self.db.connection.cursor()
-                cursor.execute("""
-                    UPDATE ogretim_gorevlileri
-                    SET sicil_no=%s, ad_soyad=%s, unvan=%s, email=%s, telefon=%s
-                    WHERE id=%s AND bolum_adi=%s
-                """, (sicil, ad_soyad, unvan, email, telefon, gorevli_id, self.current_bolum))
-                self.db.connection.commit()
-                cursor.close()
+                self.db.ogretim_gorevlileri.update_one(
+                    {'_id': gorevli_id, 'bolum_adi': self.current_bolum},
+                    {'$set': {'sicil_no': sicil, 'ad_soyad': ad_soyad, 'unvan': unvan,
+                              'email': email, 'telefon': telefon}})
                 messagebox.showinfo("Başarılı", "Öğretim görevlisi güncellendi!")
                 edit_window.destroy()
-            except Error as e:
+            except PyMongoError as e:
                 messagebox.showerror("Hata", f"Güncellenemedi: {e}")
 
         def delete_instructor():
@@ -191,11 +181,7 @@ class InstructorMixin:
 
             if messagebox.askyesno("Onay", f"{selected} silinsin mi?"):
                 gorevli_id = gorevli_dict[selected][0]
-                cursor = self.db.connection.cursor()
-                cursor.execute("DELETE FROM ogretim_gorevlileri WHERE id=%s AND bolum_adi=%s",
-                               (gorevli_id, self.current_bolum))
-                self.db.connection.commit()
-                cursor.close()
+                cascades.delete_instructor(self.db, gorevli_id)
                 self.log_activity("Öğretim görevlisi silindi", selected)
                 messagebox.showinfo("Başarılı", "Öğretim görevlisi silindi!")
                 edit_window.destroy()
@@ -237,16 +223,9 @@ class InstructorMixin:
             tree.heading(col, text=col)
             tree.column(col, width=150)
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("""
-            SELECT sicil_no, ad_soyad, unvan, email, telefon
-            FROM ogretim_gorevlileri WHERE bolum_adi=%s
-            ORDER BY ad_soyad
-        """, (self.current_bolum,))
-
-        for row in cursor.fetchall():
-            tree.insert("", tk.END, values=row)
-        cursor.close()
+        docs = self.db.ogretim_gorevlileri.find({'bolum_adi': self.current_bolum}).sort('ad_soyad', 1)
+        for d in docs:
+            tree.insert("", tk.END, values=(
+                d['sicil_no'], d['ad_soyad'], d.get('unvan'), d.get('email'), d.get('telefon')))
 
         tree.pack(fill=tk.BOTH, expand=True)
-

@@ -1,12 +1,14 @@
-"""Uygulamanın kompozisyon kökü: tüm ekran mixin'lerini birleştiren
-SinavTakvimiApp sınıfı."""
+"""Tüm ekranları bir araya getiren ana uygulama sınıfı."""
 import queue
 import threading
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 
-from .styles import configure_styles, generate_app_icon
+from .styles import (apply_widget_defaults, configure_styles, generate_window_background,
+                      get_app_icon, get_login_background, get_panel_background,
+                      set_window_background)
 from .database import DatabaseManager
 from .ui.auth import AuthMixin
 from .ui.dashboard import DashboardMixin
@@ -23,17 +25,22 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
     def __init__(self, root):
         self.root = root
         self.root.title("Dinamik Sınav Takvimi Sistemi - Kocaeli Üniversitesi")
-        self.root.geometry("1200x700")
+        self.root.geometry("1280x760")
+        self.root.minsize(1024, 640)
 
         self.style = ttk.Style(self.root)
         configure_styles(self.style)
+        apply_widget_defaults(self.root)
 
-        # PhotoImage referanslarını self üzerinde tutuyoruz; yerel değişkende
-        # tutulsalardı fonksiyon dönüşünde çöp toplanır, görsel boş çıkardı.
-        base_icon = generate_app_icon(512)
+        # Görselleri burada saklamazsak ekranda boş görünüyorlar.
+        base_icon = get_app_icon(512)
         self.app_icon_img = ImageTk.PhotoImage(base_icon.resize((64, 64), Image.LANCZOS))
-        self.login_icon_img = ImageTk.PhotoImage(base_icon.resize((160, 160), Image.LANCZOS))
+        self.header_icon_img = ImageTk.PhotoImage(base_icon.resize((44, 44), Image.LANCZOS))
+        self.login_icon_img = ImageTk.PhotoImage(base_icon.resize((150, 150), Image.LANCZOS))
         self.root.iconphoto(True, self.app_icon_img)
+        self.login_bg_source = get_login_background()
+        self.panel_bg_source = get_panel_background()
+        set_window_background(generate_window_background)
 
         self.db = DatabaseManager()
         self.current_user = None
@@ -46,48 +53,33 @@ class SinavTakvimiApp(AuthMixin, DashboardMixin, InstructorMixin, ClassroomMixin
     def clear_screen(self):
         for widget in self.root.winfo_children():
             widget.destroy()
+        # Çıkış yapınca üst menü ekranda kalmasın.
+        self.root.config(menu=tk.Menu(self.root))
 
 
     def check_derslik_requirement(self):
-        """Derslik girişi yapılmış mı kontrol et"""
         if not self.current_bolum:
             return False
 
-        cursor = self.db.connection.cursor()
-        cursor.execute("SELECT COUNT(*) FROM derslikler WHERE bolum_adi=%s", (self.current_bolum,))
-        count = cursor.fetchone()[0]
-        cursor.close()
-
-        return count > 0
+        return self.db.derslikler.count_documents({'bolum_adi': self.current_bolum}) > 0
 
     def log_activity(self, islem, detay=None):
-        """Kim ne zaman ne yaptı kaydı (aktivite_log). Kritik işlemlerde
-        (giriş, program/oturma planı oluşturma, silme, gözetmen atama) çağrılır.
-        Loglama arızası ana işlemi asla engellememeli, bu yüzden hata yutulur."""
+        # Kayıt tutulamazsa bile asıl işlem devam etsin.
         try:
-            cursor = self.db.connection.cursor()
-            cursor.execute("""
-                INSERT INTO aktivite_log (kullanici, bolum_adi, islem, detay)
-                VALUES (%s, %s, %s, %s)
-            """, (self.current_user, self.current_bolum, islem, detay))
-            self.db.connection.commit()
-            cursor.close()
+            self.db.aktivite_log.insert_one({
+                'kullanici': self.current_user,
+                'bolum_adi': self.current_bolum,
+                'islem': islem,
+                'detay': detay,
+                'created_at': datetime.now(),
+            })
         except Exception as e:
             print(f"Uyarı: aktivite kaydı yazılamadı: {e}")
 
     def run_background_task(self, title, worker):
-        """Uzun süren bir işi (ör. büyük Excel yükleme) ayrı bir thread'de
-        çalıştırırken bir ilerleme çubuğu gösterir; arayüz donmaz.
+        """Uzun süren bir işi ilerleme çubuğu göstererek arka planda çalıştırır.
 
-        `worker(progress_callback)` arka plan thread'inde çalışır ve bitince
-        kullanıcıya gösterilecek sonuç mesajını (str) döndürmelidir.
-        `progress_callback(current, total, message=None)` ilerlemeyi bir
-        kuyruğa yazar; Tkinter widget'ları SADECE ana thread'deki poll()
-        içinde güncellenir (Tkinter thread-safe değildir, worker içinden
-        doğrudan widget güncellemek/işaret vermek YANLIŞTIR).
-
-        Pencere modal (grab_set) tutulur: işlem bitmeden aynı DB bağlantısını
-        başka bir ekrandan eşzamanlı kullanmayı engeller."""
+        Böylece dosya yüklenirken ekran donmaz."""
         progress_window = tk.Toplevel(self.root)
         progress_window.title(title)
         progress_window.geometry("420x140")
